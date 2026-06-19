@@ -1,0 +1,56 @@
+# The Crew — global configuration.
+# `defaults` apply to every persona; each persona may override any key.
+# Access level, autonomy, and guardrails are all driven from here (no code change
+# needed to retune them) — see docs/superpowers/specs for the design.
+
+audit_log: .logs/audit.jsonl
+
+defaults:
+  access_level: full          # full | propose | sandboxed
+  autonomy: autonomous         # autonomous | approve_handoffs | direct_only
+  external_comms: gated        # gated | autonomous | readonly
+  protected_branches: [main, master]
+  block_destructive: true      # block rm -rf, force-push to protected, prod deploy
+  require_branch: true         # never commit directly to a protected branch
+  model: claude-opus-4-8
+  allowed_tools:
+    - Read
+    - Edit
+    - Write
+    - Bash
+    - Glob
+    - Grep
+
+personas:
+  # --- Phase 1: Adam, end to end ---
+  adam:
+    display_name: Adam
+    role: Senior Developer
+    workdir: /Users/m.mostafa/Workspace/code/plauda   # the real Loquina repo
+    model: claude-opus-4-8
+    channels: ["#adam-dev", "#crew-team"]
+    bot_token_env: ADAM_SLACK_BOT_TOKEN
+    app_token_env: ADAM_SLACK_APP_TOKEN
+    require_branch: true
+    enabled: true
+
+  # --- Phase 2: the rest of the team (enable once their Slack apps exist) ---
+  eva:
+    display_name: Eva
+    role: Customer Support
+    channels: ["#eva-support", "#crew-team", "#loquina-feedback"]
+    external_comms: gated
+    require_branch: true
+    enabled: false
+
+  zakarya:
+    display_name: Zakarya
+    role: Product Owner
+    channels: ["#zakarya-product", "#crew-team"]
+    enabled: false
+
+  sara:
+    display_name: Sara
+    role: Designer
+    channels: ["#sara-design", "#crew-team"]
+    enabled: false
