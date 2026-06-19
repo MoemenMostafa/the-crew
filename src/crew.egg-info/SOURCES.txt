@@ -1,0 +1,7 @@
+pyproject.toml
+src/crew/__init__.py
+src/crew.egg-info/PKG-INFO
+src/crew.egg-info/SOURCES.txt
+src/crew.egg-info/dependency_links.txt
+src/crew.egg-info/requires.txt
+src/crew.egg-info/top_level.txt
