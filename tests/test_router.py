@@ -17,8 +17,8 @@ def test_messages_processed_in_order_and_posted(tmp_path):
         sess = FakeSession()
         posts = []
 
-        async def post(channel, thread, text):
-            posts.append((channel, thread, text))
+        async def post(persona, channel, thread, text):
+            posts.append((persona, channel, thread, text))
 
         router = Router({"adam": sess}, post)
         await router.handle(IncomingMessage("adam", "#adam-dev", "t1", "first", "user"))
@@ -29,7 +29,8 @@ def test_messages_processed_in_order_and_posted(tmp_path):
 
     calls, posts = asyncio.run(run())
     assert calls == ["first", "second"]
-    assert [p[2] for p in posts] == ["ok:first", "ok:second"]
+    assert [p[3] for p in posts] == ["ok:first", "ok:second"]
+    assert all(p[0] == "adam" for p in posts)
 
 
 def test_paused_router_drops_dispatch(tmp_path):
@@ -37,7 +38,7 @@ def test_paused_router_drops_dispatch(tmp_path):
         sess = FakeSession()
         posts = []
 
-        async def post(channel, thread, text):
+        async def post(persona, channel, thread, text):
             posts.append(text)
 
         router = Router({"adam": sess}, post)

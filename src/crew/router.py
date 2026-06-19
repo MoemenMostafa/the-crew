@@ -14,8 +14,8 @@ from typing import Awaitable, Callable, Optional
 
 log = logging.getLogger("crew.router")
 
-# post(channel, thread, text) -> awaitable
-PostFn = Callable[[str, Optional[str], str], Awaitable[None]]
+# post(persona, channel, thread, text) -> awaitable  (persona names the bot that replies)
+PostFn = Callable[[str, str, Optional[str], str], Awaitable[None]]
 
 
 @dataclass
@@ -59,12 +59,12 @@ class Router:
                 context = f"[Slack {msg.channel} — message from {msg.sender}]"
                 reply = await session.ask(msg.text, context=context)
                 if reply:
-                    await self.post(msg.channel, msg.thread, reply)
+                    await self.post(name, msg.channel, msg.thread, reply)
             except Exception:  # keep the worker alive across a bad turn
                 log.exception("turn failed for persona %s", name)
                 try:
                     await self.post(
-                        msg.channel, msg.thread, ":warning: I hit an error on that one."
+                        name, msg.channel, msg.thread, ":warning: I hit an error on that one."
                     )
                 except Exception:
                     log.exception("failed to post error notice")
