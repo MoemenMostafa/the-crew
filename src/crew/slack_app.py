@@ -147,7 +147,11 @@ class SlackConnector:
             self.bot_user_id = resp.get("user_id")
         except Exception:
             pass
-        await self._handler.start_async()
+        # connect_async() establishes the socket and RETURNS; start_async() would
+        # block forever (await sleep(inf)), so the caller's post-startup code
+        # (mention map, feedback, webhook) would never run. The process is kept
+        # alive by run_forever()'s Event().wait().
+        await self._handler.connect_async()
 
     async def fetch_thread(self, channel: str, thread_ts: str, limit: int = 50) -> list:  # pragma: no cover
         """Return the thread's messages as 'speaker: text' lines (best-effort)."""
