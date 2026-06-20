@@ -162,11 +162,21 @@ class Crew:
             )
             return
         if msg.dispatch:
+            roster = "; ".join(
+                f"{p.cfg.display_name} ({p.cfg.role})"
+                for name, p in self.personas.items()
+                if name != msg.persona
+            )
             msg.text = (
-                "(Posted in a shared channel without addressing anyone — you're the "
-                "coordinator here.) If this is clearly in your wheelhouse, answer it. "
-                "Otherwise @mention the teammate(s) best suited and hand it to them — "
-                "don't answer on their behalf. If no one needs to act, a one-line ack is fine.\n\n"
+                "(Posted in a shared channel addressed to no one — you're the coordinator.) "
+                "Your job here is to ROUTE, not to answer everything yourself. Decide who "
+                "owns this and hand it to them by @mentioning them — default to the "
+                "specialist. Only answer directly when it is squarely your own area "
+                "(product priorities, roadmap, scope, marketing/positioning). When in "
+                "doubt, hand off rather than answer.\n\n"
+                f"Teammates and what they own: {roster}.\n\n"
+                "Respond with a short handoff: @mention the right teammate(s) and say in "
+                "one line what you need from them — don't solve it for them. "
                 f"The message:\n{msg.text}"
             )
         await self.router.handle(msg)
