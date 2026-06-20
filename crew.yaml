@@ -12,6 +12,7 @@ defaults:
   protected_branches: [main, master]
   block_destructive: true      # block rm -rf, force-push to protected, prod deploy
   require_branch: true         # never commit directly to a protected branch
+  workdir: /Users/m.mostafa/Workspace/code/plauda   # the Loquina repo (shared context)
   model: claude-opus-4-8
   allowed_tools:
     - Read
