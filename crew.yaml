@@ -31,6 +31,22 @@ feedback:
     # items_path: feedback          # JSON key holding the array (omit if top-level)
     # fields: { id: id, text: message, email: user.email, created_at: created_at }
 
+# Inbound webhook (push): any project POSTs feedback to the crew, secured by a
+# shared secret (read from the env var named in secret_env — never stored here).
+# Bound to localhost by default; expose remotely only behind a TLS proxy.
+#   curl -X POST http://127.0.0.1:8787/feedback \
+#     -H "Authorization: Bearer $CREW_WEBHOOK_SECRET" \
+#     -H "Content-Type: application/json" \
+#     -d '{"text":"App crashes on login","email":"u@example.com"}'
+# Optional payload fields: id, context, email, persona (override), channel (override).
+webhook:
+  enabled: false
+  host: 127.0.0.1
+  port: 8787
+  secret_env: CREW_WEBHOOK_SECRET
+  persona: eva
+  channel: "#loquina-feedback"
+
 defaults:
   access_level: full          # full | propose | sandboxed
   autonomy: autonomous         # autonomous | approve_handoffs | direct_only

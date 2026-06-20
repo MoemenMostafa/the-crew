@@ -128,6 +128,27 @@ writing a class with `fetch_since(last_id, limit)` and registering it in
 `build_feedback_source` (`src/crew/feedback.py`). *(The shipped config wires this to
 the example project; repoint `source` at yours.)*
 
+### Push instead of pull: secure webhook
+
+Rather than the crew polling a project, a project can **POST** feedback to the crew.
+Configure `crew.yaml → webhook` (enabled, host/port, `secret_env`, default
+persona/channel) and set the secret in the environment (`CREW_WEBHOOK_SECRET`). Any
+project then calls:
+
+```bash
+curl -X POST http://127.0.0.1:8787/feedback \
+  -H "Authorization: Bearer $CREW_WEBHOOK_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"App crashes on login","email":"u@example.com"}'
+```
+
+Payload: `text` (required) plus optional `id`, `context`, `email`, and `persona` /
+`channel` overrides. Auth is a shared secret (constant-time compared) via
+`Authorization: Bearer …` or `X-Crew-Token`; the secret lives in the environment, not
+config. It **binds to `127.0.0.1` by default** — to accept remote calls, front it with
+a TLS-terminating reverse proxy and set `host` explicitly. Poller and webhook can run
+together; both feed the same triage path.
+
 ## Layout
 
 ```

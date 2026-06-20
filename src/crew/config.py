@@ -59,11 +59,22 @@ class FeedbackConfig:
 
 
 @dataclass
+class WebhookConfig:
+    enabled: bool
+    host: str
+    port: int
+    secret_env: str
+    persona: str
+    channel: str
+
+
+@dataclass
 class CrewConfig:
     personas: list[PersonaConfig]
     audit_log: Path
     root: Path
     feedback: "FeedbackConfig | None" = None
+    webhook: "WebhookConfig | None" = None
 
 
 def _merge(defaults: dict, override: dict, key, fallback=None):
@@ -120,4 +131,18 @@ def load_config(path: str | Path) -> CrewConfig:
             source=fb.get("source") or {},
         )
 
-    return CrewConfig(personas=personas, audit_log=audit_log, root=root, feedback=feedback)
+    webhook = None
+    wh = raw.get("webhook")
+    if wh:
+        webhook = WebhookConfig(
+            enabled=bool(wh.get("enabled", False)),
+            host=str(wh.get("host", "127.0.0.1")),
+            port=int(wh.get("port", 8787)),
+            secret_env=str(wh.get("secret_env", "CREW_WEBHOOK_SECRET")),
+            persona=str(wh.get("persona", "eva")),
+            channel=str(wh.get("channel", "#loquina-feedback")),
+        )
+
+    return CrewConfig(
+        personas=personas, audit_log=audit_log, root=root, feedback=feedback, webhook=webhook
+    )
