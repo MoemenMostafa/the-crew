@@ -18,7 +18,7 @@ from .feedback import FeedbackItem, FeedbackPoller, build_feedback_source
 from .memory import Memory
 from .persona import Persona
 from .router import IncomingMessage, Router
-from .slack_app import SlackConnector
+from .slack_app import SlackConnector, rewrite_mentions
 from .state import SessionStore
 from .webhook import WebhookServer
 
@@ -52,7 +52,10 @@ class Crew:
                 persona, self.audit, memory, store=self.store
             )
 
-        self.router = Router(self.sessions, self._post, react=self._react)
+        self.mention_map: dict = {}  # lowercased name/display-name -> bot user id
+        self.router = Router(
+            self.sessions, self._post, react=self._react, fetch_thread=self._fetch_thread
+        )
 
         dp = config.dispatch
         coordinator = dp.coordinator if (dp and dp.enabled) else None
@@ -131,10 +134,14 @@ class Crew:
         await self._route_feedback(item, persona or wh.persona, channel or wh.channel)
 
     async def _post(self, persona: str, channel: str, thread: Optional[str], text: str) -> None:
+        text = rewrite_mentions(text, self.mention_map)  # @Sara -> <@BOT_ID> so handoffs ping
         await self.connectors[persona].post(channel, thread, text)
 
     async def _react(self, persona: str, channel: str, ts: str, emoji: str, add: bool) -> None:
         await self.connectors[persona].react(channel, ts, emoji, add)
+
+    async def _fetch_thread(self, persona: str, channel: str, thread_ts: str) -> list:
+        return await self.connectors[persona].fetch_thread(channel, thread_ts)
 
     async def _on_message(self, msg: IncomingMessage) -> None:
         low = msg.text.strip().lower()
@@ -185,6 +192,15 @@ class Crew:
         names = ", ".join(self.connectors) or "(none)"
         log.info("starting Crew with personas: %s", names)
         await asyncio.gather(*(c.start() for c in self.connectors.values()))
+
+        # Build the @name -> bot-user-id map so handoffs become real mentions.
+        for name, conn in self.connectors.items():
+            uid = getattr(conn, "bot_user_id", None)
+            if uid:
+                self.mention_map[name.lower()] = uid
+                self.mention_map[self.personas[name].cfg.display_name.lower()] = uid
+        log.info("mention map resolved for: %s", ", ".join(sorted(set(self.mention_map))))
+
         if self.feedback_poller is not None:
             log.info("starting feedback poller → %s", self.config.feedback.persona)
             self._feedback_task = asyncio.create_task(self._run_feedback_loop())

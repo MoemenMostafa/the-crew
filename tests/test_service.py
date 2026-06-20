@@ -35,6 +35,9 @@ class FakeConnector:
     async def react(self, channel, ts, emoji, add):
         pass
 
+    async def fetch_thread(self, channel, thread_ts):
+        return []
+
 
 def make_config(tmp_path, personality="Direct.", coordinator=None):
     pdir = tmp_path / "personas" / "adam"

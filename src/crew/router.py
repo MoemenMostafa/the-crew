@@ -18,6 +18,8 @@ log = logging.getLogger("crew.router")
 PostFn = Callable[[str, str, Optional[str], str], Awaitable[None]]
 # react(persona, channel, ts, emoji, add) -> awaitable  (working/done indicator)
 ReactFn = Callable[[str, str, str, str, bool], Awaitable[None]]
+# fetch_thread(persona, channel, thread_ts) -> awaitable[list[str]]  (transcript lines)
+FetchThreadFn = Callable[[str, str, str], Awaitable[list]]
 
 _WORKING = "eyes"
 _DONE = "white_check_mark"
@@ -42,6 +44,7 @@ class Router:
         post: PostFn,
         ack_text: Optional[str] = None,
         react: Optional[ReactFn] = None,
+        fetch_thread: Optional[FetchThreadFn] = None,
         max_agent_hops: int = 8,
     ):
         self.sessions = sessions
@@ -50,6 +53,7 @@ class Router:
         # ("typing") indicator. Set a string to also post a worded ack.
         self.ack_text = ack_text
         self.react = react  # optional 👀/✅ working indicator
+        self.fetch_thread = fetch_thread  # optional: read the thread for context
         self.paused = False
         # Loop-guard: cap consecutive agent→agent hops without a human in between.
         self.max_agent_hops = max_agent_hops
@@ -123,6 +127,19 @@ class Router:
                     await self.post(_name, _msg.channel, _msg.thread, text)
 
                 context = f"[Slack {msg.channel} — message from {msg.sender}]"
+                if msg.thread and self.fetch_thread is not None:
+                    try:
+                        lines = await self.fetch_thread(name, msg.channel, msg.thread)
+                        if lines:
+                            transcript = "\n".join(lines)
+                            context = (
+                                f"[Slack {msg.channel}] You've been brought into a thread. "
+                                f"The conversation so far:\n{transcript}\n\n"
+                                "Respond to the most recent message."
+                            )
+                    except Exception:
+                        log.debug("thread fetch failed for %s — using minimal context", name)
+
                 reply = await session.ask(msg.text, context=context, on_update=on_update)
 
                 # If the agent produced nothing along the way, post the final text

@@ -174,3 +174,32 @@ def test_unknown_persona_ignored(tmp_path):
         await router.stop()
 
     asyncio.run(run())  # must not raise
+
+
+def test_thread_transcript_passed_as_context(tmp_path):
+    class CtxSession:
+        def __init__(self):
+            self.contexts = []
+
+        async def ask(self, text, context="", on_update=None):
+            self.contexts.append(context)
+            return "ok"
+
+    async def run():
+        sess = CtxSession()
+
+        async def post(persona, channel, thread, text):
+            pass
+
+        async def fetch_thread(persona, channel, thread_ts):
+            return ["user: improve the landing UX?", "zakarya: @sara this is yours"]
+
+        router = Router({"adam": sess}, post, fetch_thread=fetch_thread)
+        await router.handle(IncomingMessage("adam", "#crew-team", "9.9", "do it", "u", ts="9.9"))
+        await router.join()
+        await router.stop()
+        return sess.contexts
+
+    contexts = asyncio.run(run())
+    assert "brought into a thread" in contexts[0]
+    assert "improve the landing UX" in contexts[0]

@@ -15,6 +15,24 @@ from .config import PersonaConfig
 from .router import IncomingMessage
 
 _MENTION = re.compile(r"<@[A-Z0-9]+>")
+_AT = re.compile(r"@([A-Za-z][A-Za-z0-9._-]*)")
+
+
+def rewrite_mentions(text: str, name_to_id: dict) -> str:
+    """Turn '@Sara' into a real Slack mention '<@SARA_BOT_ID>' so the bot is pinged.
+
+    `name_to_id` maps lowercased persona name/display-name → bot user id. Unknown
+    @handles are left untouched. This is more reliable than chat.postMessage's
+    `link_names`, which doesn't dependably link bot users.
+    """
+    if not name_to_id:
+        return text
+
+    def repl(m):
+        uid = name_to_id.get(m.group(1).lower())
+        return f"<@{uid}>" if uid else m.group(0)
+
+    return _AT.sub(repl, text)
 
 
 def resolve_tokens(cfg: PersonaConfig) -> tuple[str, str]:
@@ -90,6 +108,7 @@ class SlackConnector:
         self.cfg = cfg
         self.on_message = on_message
         self.is_coordinator = is_coordinator
+        self.bot_user_id = None  # resolved at start(); used for mention rewriting
         self._app = None
         self._handler = None
 
@@ -122,7 +141,28 @@ class SlackConnector:
     async def start(self) -> None:  # pragma: no cover - needs live socket
         if self._handler is None:
             self._build()
+        # Resolve our own bot user id so handoffs can be rewritten to real mentions.
+        try:
+            resp = await self._app.client.auth_test()
+            self.bot_user_id = resp.get("user_id")
+        except Exception:
+            pass
         await self._handler.start_async()
+
+    async def fetch_thread(self, channel: str, thread_ts: str, limit: int = 50) -> list:  # pragma: no cover
+        """Return the thread's messages as 'speaker: text' lines (best-effort)."""
+        if self._app is None:
+            self._build()
+        resp = await self._app.client.conversations_replies(
+            channel=channel, ts=thread_ts, limit=limit
+        )
+        lines = []
+        for m in resp.get("messages", []):
+            who = m.get("username") or ("teammate" if m.get("bot_id") else "user")
+            txt = (m.get("text") or "").strip()
+            if txt:
+                lines.append(f"{who}: {txt}")
+        return lines
 
     async def stop(self) -> None:  # pragma: no cover - needs live socket
         if self._handler is not None:

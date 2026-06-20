@@ -1,7 +1,7 @@
 import pytest
 
 from crew.config import Guardrails, PersonaConfig
-from crew.slack_app import event_to_incoming, resolve_tokens
+from crew.slack_app import event_to_incoming, resolve_tokens, rewrite_mentions
 
 
 def cfg():
@@ -121,3 +121,15 @@ def test_resolve_tokens_missing_raises(monkeypatch):
     with pytest.raises(RuntimeError) as e:
         resolve_tokens(cfg())
     assert "ADAM_SLACK_BOT_TOKEN" in str(e.value)
+
+
+def test_rewrite_mentions_links_known_names():
+    mapping = {"sara": "USARA", "adam": "UADAM", "zakarya": "UZAK"}
+    out = rewrite_mentions("@Sara this is yours, cc @adam and @nobody", mapping)
+    assert "<@USARA>" in out
+    assert "<@UADAM>" in out
+    assert "@nobody" in out  # unknown handle left untouched
+
+
+def test_rewrite_mentions_empty_map_is_noop():
+    assert rewrite_mentions("@Sara hi", {}) == "@Sara hi"
