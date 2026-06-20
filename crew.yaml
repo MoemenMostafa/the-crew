@@ -56,6 +56,15 @@ webhook:
   persona: eva
   channel: "#loquina-feedback"
 
+# Named MCP servers a persona can opt into via its `mcp: [...]` list. Portable:
+# add any stdio MCP server here. `browser` is headless Playwright (one-time:
+# `npx playwright install chromium`).
+mcp_servers:
+  browser:
+    type: stdio
+    command: npx
+    args: ["-y", "@playwright/mcp@latest", "--headless", "--isolated"]
+
 defaults:
   access_level: full          # full | propose | sandboxed
   autonomy: autonomous         # autonomous | approve_handoffs | direct_only
@@ -84,6 +93,7 @@ personas:
     bot_token_env: ADAM_SLACK_BOT_TOKEN
     app_token_env: ADAM_SLACK_APP_TOKEN
     require_branch: true
+    mcp: [browser]          # headless browser for end-to-end testing
     enabled: true
 
   # --- Phase 2: the rest of the team (enable once their Slack apps exist) ---
@@ -93,6 +103,7 @@ personas:
     channels: ["#eva-support", "#crew-team", "#loquina-feedback"]
     external_comms: gated
     require_branch: true
+    mcp: [browser]          # headless browser to reproduce user-reported issues
     enabled: true
 
   zakarya:
@@ -105,4 +116,5 @@ personas:
     display_name: Sara
     role: Designer
     channels: ["#sara-design", "#crew-team"]
+    mcp: [browser]          # headless browser to view/screenshot the running UI
     enabled: true

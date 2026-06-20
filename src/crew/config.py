@@ -47,6 +47,7 @@ class PersonaConfig:
     allowed_tools: list[str]
     guardrails: Guardrails
     dir: Path
+    mcp_servers: dict = field(default_factory=dict)  # name -> Agent SDK MCP server config
 
 
 @dataclass
@@ -98,6 +99,8 @@ def load_config(path: str | Path) -> CrewConfig:
     raw = yaml.safe_load(path.read_text()) or {}
     defaults = raw.get("defaults", {}) or {}
     personas_raw = raw.get("personas", {}) or {}
+    # Registry of named MCP servers a persona can opt into (e.g. a browser).
+    mcp_registry = raw.get("mcp_servers", {}) or {}
 
     personas: list[PersonaConfig] = []
     for name, entry in personas_raw.items():
@@ -108,6 +111,10 @@ def load_config(path: str | Path) -> CrewConfig:
         guardrails = Guardrails(
             **{k: _merge(defaults, entry, k, getattr(Guardrails(), k)) for k in _GUARDRAIL_KEYS}
         )
+
+        # Resolve the persona's MCP servers from the names it opted into.
+        mcp_names = list(_merge(defaults, entry, "mcp", []) or [])
+        mcp_servers = {n: mcp_registry[n] for n in mcp_names if n in mcp_registry}
 
         personas.append(
             PersonaConfig(
@@ -122,6 +129,7 @@ def load_config(path: str | Path) -> CrewConfig:
                 allowed_tools=list(_merge(defaults, entry, "allowed_tools", []) or []),
                 guardrails=guardrails,
                 dir=root / "personas" / name,
+                mcp_servers=mcp_servers,
             )
         )
 

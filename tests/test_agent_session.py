@@ -57,6 +57,7 @@ def make_persona(tmp_path):
         allowed_tools=["Read", "Bash"],
         guardrails=Guardrails(),
         dir=pdir,
+        mcp_servers={"browser": {"type": "stdio", "command": "npx"}},
     )
     return Persona.load(cfg)
 
@@ -82,6 +83,10 @@ def test_ask_returns_text_and_resumes_session(tmp_path):
     # The model and cwd flow through from config.
     assert FakeClient.instances[0].options.model == "claude-opus-4-8"
     assert str(FakeClient.instances[0].options.cwd) == str(tmp_path)
+    # MCP servers (e.g. the browser) flow through to the SDK options.
+    assert FakeClient.instances[0].options.mcp_servers == {
+        "browser": {"type": "stdio", "command": "npx"}
+    }
 
 
 def test_ask_streams_intermediate_messages(tmp_path):

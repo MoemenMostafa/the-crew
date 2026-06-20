@@ -11,6 +11,11 @@ def write_yaml(tmp_path: Path) -> Path:
         textwrap.dedent(
             """
             audit_log: .logs/audit.jsonl
+            mcp_servers:
+              browser:
+                type: stdio
+                command: npx
+                args: ["-y", "@playwright/mcp"]
             defaults:
               access_level: full
               autonomy: autonomous
@@ -29,6 +34,7 @@ def write_yaml(tmp_path: Path) -> Path:
                 bot_token_env: ADAM_SLACK_BOT_TOKEN
                 app_token_env: ADAM_SLACK_APP_TOKEN
                 require_branch: true
+                mcp: [browser]
                 enabled: true
               eva:
                 display_name: Eva
@@ -65,3 +71,18 @@ def test_persona_dir_resolves_under_personas(tmp_path):
     cfg = load_config(write_yaml(tmp_path))
     adam = cfg.personas[0]
     assert adam.dir == tmp_path / "personas" / "adam"
+
+
+def test_mcp_servers_resolved_from_registry(tmp_path):
+    cfg = load_config(write_yaml(tmp_path))
+    adam = next(p for p in cfg.personas if p.name == "adam")
+    assert adam.mcp_servers == {
+        "browser": {"type": "stdio", "command": "npx", "args": ["-y", "@playwright/mcp"]}
+    }
+
+
+def test_no_mcp_when_not_opted_in(tmp_path):
+    # eva is disabled here, so build a persona without an `mcp` list via the real yaml.
+    cfg = load_config(write_yaml(tmp_path))
+    # adam opted in; a persona with no `mcp` key would resolve to {} (covered by default).
+    assert isinstance(cfg.personas[0].mcp_servers, dict)

@@ -58,6 +58,7 @@ class AgentSession:
             permission_mode="default",
             can_use_tool=self._can_use_tool,
             resume=resume,
+            mcp_servers=self.persona.cfg.mcp_servers,
         )
 
     def _remember_session(self, session_id: str) -> None:

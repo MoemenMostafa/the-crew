@@ -190,6 +190,28 @@ config. It **binds to `127.0.0.1` by default** — to accept remote calls, front
 a TLS-terminating reverse proxy and set `host` explicitly. Poller and webhook can run
 together; both feed the same triage path.
 
+## Browser & other tools (MCP)
+
+Personas can be given extra tools via MCP servers — config-only and portable.
+Define a server once in a top-level `mcp_servers:` registry, then opt a persona in
+with an `mcp: [...]` list:
+
+```yaml
+mcp_servers:
+  browser:
+    type: stdio
+    command: npx
+    args: ["-y", "@playwright/mcp@latest", "--headless", "--isolated"]
+personas:
+  sara:
+    mcp: [browser]
+```
+
+This repo ships a **headless browser** (`browser`) enabled for Adam (e2e checks),
+Eva (reproduce user issues), and Sara (view/screenshot the running UI). One-time
+setup: `npx playwright install chromium`. MCP tool calls go through the same
+guardrail hook as everything else. Add any stdio MCP server the same way.
+
 ## Layout
 
 ```

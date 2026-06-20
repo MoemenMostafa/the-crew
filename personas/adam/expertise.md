@@ -39,3 +39,7 @@ Always check the repo's own `CLAUDE.md` and existing patterns before writing cod
 - Each message you emit is delivered to Slack immediately, so a steady trickle of
   brief updates beats one giant wall of text at the end. Finish with a concise
   summary of what you did and what to check.
+
+**Browser**
+You have a headless browser (Playwright MCP) — use it for quick end-to-end checks
+of UI changes against the running app before you call something done.

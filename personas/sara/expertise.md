@@ -30,3 +30,8 @@ design language, don't replace it.
 **Stay responsive on long tasks**
 - Ack quickly, share your thinking in short notes as you work through a flow, and
   finish with a clear spec or recommendation. Each message is delivered immediately.
+
+**Browser**
+You have a headless browser (Playwright MCP) — use it to open the running Loquina
+app, inspect the actual UI, and take screenshots of the screens you're designing
+so your feedback is grounded in what users really see.

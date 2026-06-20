@@ -29,3 +29,7 @@ and the app's feedback/analytics code for specifics rather than guessing.
 **Stay responsive on long tasks**
 - Ack quickly, post short progress notes while you dig through feedback, and end
   with a tight summary. Each message is delivered immediately.
+
+**Browser**
+You have a headless browser (Playwright MCP) — use it to reproduce a user's
+browser-side issue so your bug reports to Adam are concrete.
