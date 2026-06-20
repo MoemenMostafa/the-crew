@@ -11,7 +11,7 @@ SDK-agnostic. Each turn:
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Awaitable, Callable, Optional
 
 from claude_agent_sdk import (
     AssistantMessage,
@@ -56,7 +56,15 @@ class AgentSession:
             resume=self.session_id,
         )
 
-    async def ask(self, text: str, context: str = "") -> str:
+    async def ask(
+        self,
+        text: str,
+        context: str = "",
+        on_update: Optional[Callable[[str], Awaitable[None]]] = None,
+    ) -> str:
+        """Run one turn. If ``on_update`` is given, each of the agent's intermediate
+        messages is delivered as it streams in (live progress), and the full
+        transcript is returned for logging. Without it, the joined text is returned."""
         system_prompt = self.persona.system_prompt(self.memory.read())
         options = self._options(system_prompt)
         prompt = f"{context}\n\n{text}".strip() if context else text
@@ -66,10 +74,14 @@ class AgentSession:
             await client.query(prompt)
             async for msg in client.receive_response():
                 if isinstance(msg, AssistantMessage):
-                    for block in msg.content:
-                        if isinstance(block, TextBlock):
-                            chunks.append(block.text)
+                    joined = "".join(
+                        b.text for b in msg.content if isinstance(b, TextBlock)
+                    ).strip()
+                    if joined:
+                        chunks.append(joined)
+                        if on_update is not None:
+                            await on_update(joined)
                 elif isinstance(msg, ResultMessage):
                     if msg.session_id:
                         self.session_id = msg.session_id
-        return "".join(chunks).strip()
+        return "\n\n".join(chunks).strip()

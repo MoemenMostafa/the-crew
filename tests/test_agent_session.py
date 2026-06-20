@@ -81,3 +81,20 @@ def test_ask_returns_text_and_resumes_session(tmp_path):
     # The model and cwd flow through from config.
     assert FakeClient.instances[0].options.model == "claude-opus-4-8"
     assert str(FakeClient.instances[0].options.cwd) == str(tmp_path)
+
+
+def test_ask_streams_intermediate_messages(tmp_path):
+    FakeClient.instances.clear()
+    persona = make_persona(tmp_path)
+    audit = AuditLog(tmp_path / "a.jsonl", clock=lambda: 0.0)
+    memory = Memory(persona.cfg.dir / "memory")
+    sess = AgentSession(persona, audit, memory, client_factory=FakeClient)
+
+    updates = []
+
+    async def collect(text):
+        updates.append(text)
+
+    out = asyncio.run(sess.ask("Fix it", on_update=collect))
+    assert updates == ["On it."]  # interim message delivered live
+    assert out == "On it."        # full transcript still returned

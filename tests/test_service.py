@@ -9,7 +9,7 @@ class FakeSession:
     def __init__(self, persona, audit, memory):
         self.calls = []
 
-    async def ask(self, text, context=""):
+    async def ask(self, text, context="", on_update=None):
         self.calls.append(text)
         return "done"
 
@@ -63,7 +63,9 @@ def test_start_wires_worker_and_dispatches(tmp_path):
 
         await conn.on_message(IncomingMessage("adam", "#adam-dev", None, "hello", "u"))
         await crew.router.join()
-        assert conn.posts == ["done"]
+        # Immediate ack first, then the reply.
+        assert conn.posts[0] == "🛠️ On it…"
+        assert conn.posts[-1] == "done"
         assert crew.sessions["adam"].calls == ["hello"]
 
         await crew.stop()

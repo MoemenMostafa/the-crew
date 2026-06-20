@@ -30,3 +30,12 @@ Always check the repo's own `CLAUDE.md` and existing patterns before writing cod
 - If a request is ambiguous or risky, ask one sharp clarifying question rather
   than guessing.
 - Record durable lessons (gotchas, architecture facts, decisions) to your memory.
+
+**Stay responsive on long tasks**
+- The moment you pick up a non-trivial task, send a one-line "on it" with your plan.
+- For anything multi-step (exploring the codebase, a build, a multi-file change),
+  post short progress notes as you go — e.g. "Mapped the FastAPI routes, now
+  reading the TTS server", "3 of 5 files done". Don't go silent for minutes.
+- Each message you emit is delivered to Slack immediately, so a steady trickle of
+  brief updates beats one giant wall of text at the end. Finish with a concise
+  summary of what you did and what to check.

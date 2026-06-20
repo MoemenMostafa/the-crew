@@ -28,9 +28,10 @@ class IncomingMessage:
 
 
 class Router:
-    def __init__(self, sessions: dict, post: PostFn):
+    def __init__(self, sessions: dict, post: PostFn, ack_text: Optional[str] = "🛠️ On it…"):
         self.sessions = sessions
         self.post = post
+        self.ack_text = ack_text  # immediate acknowledgement; None disables it
         self.paused = False
         self._queues: dict[str, asyncio.Queue] = {}
         self._workers: dict[str, asyncio.Task] = {}
@@ -56,10 +57,25 @@ class Router:
         while True:
             msg = await queue.get()
             try:
+                # Immediate acknowledgement so the user knows we're on it.
+                if self.ack_text:
+                    await self.post(name, msg.channel, msg.thread, self.ack_text)
+
+                # Stream the agent's intermediate messages as live progress.
+                posted = False
+
+                async def on_update(text, _name=name, _msg=msg):
+                    nonlocal posted
+                    posted = True
+                    await self.post(_name, _msg.channel, _msg.thread, text)
+
                 context = f"[Slack {msg.channel} — message from {msg.sender}]"
-                reply = await session.ask(msg.text, context=context)
-                if reply:
-                    await self.post(name, msg.channel, msg.thread, reply)
+                reply = await session.ask(msg.text, context=context, on_update=on_update)
+
+                # If the agent produced nothing along the way, post the final text
+                # (or a fallback) so the turn always closes with a reply.
+                if not posted:
+                    await self.post(name, msg.channel, msg.thread, reply or "Done.")
             except Exception:  # keep the worker alive across a bad turn
                 log.exception("turn failed for persona %s", name)
                 try:
