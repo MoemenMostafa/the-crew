@@ -118,6 +118,26 @@ markdown files, add a `crew.yaml` entry, create the Slack app, flip `enabled: tr
 Permissions → reinstall) to get the 👀-while-working → ✅-when-done reaction. Without it,
 replies still work; the reaction is just skipped.
 
+## Feedback feed (portable — Phase 3)
+
+A project's user-feedback feed can flow to a persona for triage. It's **config-only
+and portable** — point it at any project's feedback store via `crew.yaml → feedback`:
+
+- `source.type: sqlite` — read-only against any SQLite DB; supply a `query` that
+  aliases columns to the canonical names (`id, text, context, created_at, email,
+  status`) and binds `:last_id` / `:limit`. (Default is wired for Loquina.)
+- `source.type: http` — GET a JSON endpoint (`{last_id}`/`{limit}` substituted),
+  set `items_path` to the array, and `fields` to map your shape onto the canonical
+  names. `${ENV_VAR}` in `url`/`headers` expands from the environment, so tokens
+  stay out of config.
+
+The poller surfaces each new item to `feedback.persona` (Eva) in `feedback.channel`,
+who classifies it and `@mentions` the right teammate. The Crew tracks the last-seen
+id in `state/feedback.json` and **never writes to the source DB**. Enable with
+`feedback.enabled: true` once the triage persona is running. Add a new source kind
+by writing a class with `fetch_since(last_id, limit)` and registering it in
+`build_feedback_source` (`src/crew/feedback.py`).
+
 ## Layout
 
 ```

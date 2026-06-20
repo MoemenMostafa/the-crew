@@ -50,10 +50,20 @@ class PersonaConfig:
 
 
 @dataclass
+class FeedbackConfig:
+    enabled: bool
+    persona: str
+    channel: str
+    poll_interval_seconds: float
+    source: dict  # portable source spec (type: sqlite|http + its settings)
+
+
+@dataclass
 class CrewConfig:
     personas: list[PersonaConfig]
     audit_log: Path
     root: Path
+    feedback: "FeedbackConfig | None" = None
 
 
 def _merge(defaults: dict, override: dict, key, fallback=None):
@@ -98,4 +108,16 @@ def load_config(path: str | Path) -> CrewConfig:
         )
 
     audit_log = root / str(raw.get("audit_log", ".logs/audit.jsonl"))
-    return CrewConfig(personas=personas, audit_log=audit_log, root=root)
+
+    feedback = None
+    fb = raw.get("feedback")
+    if fb:
+        feedback = FeedbackConfig(
+            enabled=bool(fb.get("enabled", False)),
+            persona=str(fb.get("persona", "eva")),
+            channel=str(fb.get("channel", "#loquina-feedback")),
+            poll_interval_seconds=float(fb.get("poll_interval_seconds", 60)),
+            source=fb.get("source") or {},
+        )
+
+    return CrewConfig(personas=personas, audit_log=audit_log, root=root, feedback=feedback)

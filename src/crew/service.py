@@ -13,6 +13,7 @@ from typing import Optional
 from .agent_session import AgentSession
 from .audit import AuditLog
 from .config import CrewConfig
+from .feedback import FeedbackItem, FeedbackPoller, build_feedback_source
 from .memory import Memory
 from .persona import Persona
 from .router import IncomingMessage, Router
@@ -54,6 +55,46 @@ class Crew:
         for cfg in config.personas:
             self.connectors[cfg.name] = connector_factory(cfg, self._on_message)
 
+        # Feedback feed → Eva (Phase 3). Only set up if enabled and its persona
+        # is actually running.
+        self.feedback_poller: Optional[FeedbackPoller] = None
+        self._feedback_task = None
+        fb = config.feedback
+        if fb and fb.enabled and fb.persona in self.sessions:
+            self.feedback_poller = FeedbackPoller(
+                source=build_feedback_source(fb.source),
+                deliver=self._deliver_feedback,
+                state_path=config.root / "state" / "feedback.json",
+                interval_seconds=fb.poll_interval_seconds,
+            )
+        elif fb and fb.enabled:
+            log.warning(
+                "feedback feed enabled but persona %r isn't running — skipping", fb.persona
+            )
+
+    async def _deliver_feedback(self, item: FeedbackItem) -> None:
+        """Hand one new feedback item to the triage persona as a turn."""
+        fb = self.config.feedback
+        who = f" from {item.email}" if item.email else ""
+        context = f"\n\nContext: {item.context}" if item.context else ""
+        text = (
+            f"New user feedback #{item.id}{who}:\n\n"
+            f"{item.text}{context}\n\n"
+            "Triage this: classify it (bug / feature request / praise / confusion), "
+            "and if it needs action, @mention the right teammate in #crew-team. "
+            "Draft a reply to the user (held for approval — don't send it)."
+        )
+        await self.router.handle(
+            IncomingMessage(
+                persona=fb.persona,
+                channel=fb.channel,
+                thread=None,
+                text=text,
+                sender="loquina-feedback",
+                from_agent=False,
+            )
+        )
+
     async def _post(self, persona: str, channel: str, thread: Optional[str], text: str) -> None:
         await self.connectors[persona].post(channel, thread, text)
 
@@ -91,6 +132,20 @@ class Crew:
         names = ", ".join(self.connectors) or "(none)"
         log.info("starting Crew with personas: %s", names)
         await asyncio.gather(*(c.start() for c in self.connectors.values()))
+        if self.feedback_poller is not None:
+            log.info("starting Loquina feedback feed → %s", self.config.feedback.persona)
+            self._feedback_task = asyncio.create_task(self._run_feedback_loop())
+
+    async def _run_feedback_loop(self) -> None:  # pragma: no cover - long-running loop
+        poller = self.feedback_poller
+        while True:
+            try:
+                n = await poller.poll_once()
+                if n:
+                    log.info("surfaced %d new feedback item(s)", n)
+            except Exception:
+                log.exception("feedback poll failed — will retry")
+            await asyncio.sleep(poller.interval_seconds)
 
     async def run_forever(self) -> None:  # pragma: no cover - long-running
         await self.start()
@@ -100,6 +155,12 @@ class Crew:
             await self.stop()
 
     async def stop(self) -> None:
+        if self._feedback_task is not None:
+            self._feedback_task.cancel()
+            try:
+                await self._feedback_task
+            except asyncio.CancelledError:
+                pass
         await self.router.stop()
         await asyncio.gather(
             *(c.stop() for c in self.connectors.values()), return_exceptions=True

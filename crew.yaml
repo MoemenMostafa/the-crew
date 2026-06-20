@@ -5,6 +5,32 @@
 
 audit_log: .logs/audit.jsonl
 
+# Phase 3: a project's user-feedback feed -> a persona to triage.
+# Portable: point `source` at any SQLite DB (with a query) or HTTP JSON endpoint.
+# Enable once the triage persona (here Eva) is running.
+feedback:
+  enabled: false
+  persona: eva
+  channel: "#loquina-feedback"
+  poll_interval_seconds: 60
+  source:
+    type: sqlite          # sqlite | http
+    # --- sqlite: read-only against any DB; alias columns to the canonical names,
+    #     bind :last_id and :limit. This default is wired for Loquina. ---
+    db_path: /Users/m.mostafa/Workspace/code/plauda/app/data/loquina.db
+    query: >
+      SELECT f.id AS id, f.text AS text, f.context AS context,
+             f.created_at AS created_at, a.email AS email,
+             COALESCE(f.status, 'new') AS status
+      FROM feedback f LEFT JOIN accounts a ON a.id = f.account_id
+      WHERE f.id > :last_id ORDER BY f.id ASC LIMIT :limit
+    # --- http: GET a JSON feed (alternative to sqlite) ---
+    # type: http
+    # url: "https://example.com/api/feedback?since={last_id}&limit={limit}"
+    # headers: { Authorization: "Bearer ${FEEDBACK_API_TOKEN}" }
+    # items_path: feedback          # JSON key holding the array (omit if top-level)
+    # fields: { id: id, text: message, email: user.email, created_at: created_at }
+
 defaults:
   access_level: full          # full | propose | sandboxed
   autonomy: autonomous         # autonomous | approve_handoffs | direct_only
