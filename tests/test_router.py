@@ -77,6 +77,51 @@ def test_immediate_ack_then_streamed_updates(tmp_path):
     assert posts == ["🛠️ On it…", "Looking into it…", "Found it — here's the fix."]
 
 
+def test_working_indicator_reactions(tmp_path):
+    async def run():
+        sess = FakeSession()
+        reacts = []
+
+        async def post(persona, channel, thread, text):
+            pass
+
+        async def react(persona, channel, ts, emoji, add):
+            reacts.append((emoji, add))
+
+        router = Router({"adam": sess}, post, ack_text=None, react=react)
+        await router.handle(
+            IncomingMessage("adam", "#adam-dev", "1.1", "do it", "user", ts="1.1")
+        )
+        await router.join()
+        await router.stop()
+        return reacts
+
+    reacts = asyncio.run(run())
+    # 👀 added at start, then removed and replaced with ✅ when done.
+    assert reacts == [("eyes", True), ("eyes", False), ("white_check_mark", True)]
+
+
+def test_no_reactions_without_ts(tmp_path):
+    async def run():
+        sess = FakeSession()
+        reacts = []
+
+        async def post(persona, channel, thread, text):
+            return None
+
+        async def react(persona, channel, ts, emoji, add):
+            reacts.append(emoji)
+
+        router = Router({"adam": sess}, post, ack_text=None, react=react)
+        # ts=None (e.g. a synthetic message) -> no reaction attempts.
+        await router.handle(IncomingMessage("adam", "#c", None, "hi", "user"))
+        await router.join()
+        await router.stop()
+        return reacts
+
+    assert asyncio.run(run()) == []
+
+
 def test_unknown_persona_ignored(tmp_path):
     async def run():
         router = Router({}, lambda *a: None)

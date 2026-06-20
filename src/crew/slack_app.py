@@ -51,6 +51,7 @@ def event_to_incoming(event: dict, persona_name: str) -> Optional[IncomingMessag
         thread=thread,
         text=text,
         sender=event.get("user", "unknown"),
+        ts=event.get("ts"),
     )
 
 
@@ -106,3 +107,13 @@ class SlackConnector:
         await self._app.client.chat_postMessage(
             channel=channel, thread_ts=thread, text=text
         )
+
+    async def react(self, channel: str, ts: str, emoji: str, add: bool) -> None:  # pragma: no cover
+        """Add/remove a reaction as a working/done indicator. Best-effort: callers
+        wrap this so a missing `reactions:write` scope never breaks a reply."""
+        if self._app is None:
+            self._build()
+        if add:
+            await self._app.client.reactions_add(channel=channel, timestamp=ts, name=emoji)
+        else:
+            await self._app.client.reactions_remove(channel=channel, timestamp=ts, name=emoji)

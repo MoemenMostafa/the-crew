@@ -31,6 +31,9 @@ class FakeConnector:
     async def post(self, channel, thread, text):
         self.posts.append(text)
 
+    async def react(self, channel, ts, emoji, add):
+        pass
+
 
 def make_config(tmp_path):
     pdir = tmp_path / "personas" / "adam"

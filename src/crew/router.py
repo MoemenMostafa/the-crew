@@ -16,6 +16,11 @@ log = logging.getLogger("crew.router")
 
 # post(persona, channel, thread, text) -> awaitable  (persona names the bot that replies)
 PostFn = Callable[[str, str, Optional[str], str], Awaitable[None]]
+# react(persona, channel, ts, emoji, add) -> awaitable  (working/done indicator)
+ReactFn = Callable[[str, str, str, str, bool], Awaitable[None]]
+
+_WORKING = "eyes"
+_DONE = "white_check_mark"
 
 
 @dataclass
@@ -25,16 +30,32 @@ class IncomingMessage:
     thread: Optional[str]
     text: str
     sender: str
+    ts: Optional[str] = None  # the triggering message's timestamp (for reactions)
 
 
 class Router:
-    def __init__(self, sessions: dict, post: PostFn, ack_text: Optional[str] = "🛠️ On it…"):
+    def __init__(
+        self,
+        sessions: dict,
+        post: PostFn,
+        ack_text: Optional[str] = "🛠️ On it…",
+        react: Optional[ReactFn] = None,
+    ):
         self.sessions = sessions
         self.post = post
         self.ack_text = ack_text  # immediate acknowledgement; None disables it
+        self.react = react  # optional 👀/✅ working indicator
         self.paused = False
         self._queues: dict[str, asyncio.Queue] = {}
         self._workers: dict[str, asyncio.Task] = {}
+
+    async def _safe_react(self, persona, channel, ts, emoji, add):
+        if self.react is None or not ts:
+            return
+        try:
+            await self.react(persona, channel, ts, emoji, add)
+        except Exception:
+            log.debug("reaction %s (%s) failed — continuing", emoji, "add" if add else "remove")
 
     async def handle(self, msg: IncomingMessage) -> None:
         if self.paused:
@@ -57,6 +78,8 @@ class Router:
         while True:
             msg = await queue.get()
             try:
+                # Working indicator: 👀 on the user's message while we work.
+                await self._safe_react(name, msg.channel, msg.ts, _WORKING, True)
                 # Immediate acknowledgement so the user knows we're on it.
                 if self.ack_text:
                     await self.post(name, msg.channel, msg.thread, self.ack_text)
@@ -76,8 +99,12 @@ class Router:
                 # (or a fallback) so the turn always closes with a reply.
                 if not posted:
                     await self.post(name, msg.channel, msg.thread, reply or "Done.")
+                # Done: swap 👀 for ✅.
+                await self._safe_react(name, msg.channel, msg.ts, _WORKING, False)
+                await self._safe_react(name, msg.channel, msg.ts, _DONE, True)
             except Exception:  # keep the worker alive across a bad turn
                 log.exception("turn failed for persona %s", name)
+                await self._safe_react(name, msg.channel, msg.ts, _WORKING, False)
                 try:
                     await self.post(
                         name, msg.channel, msg.thread, ":warning: I hit an error on that one."

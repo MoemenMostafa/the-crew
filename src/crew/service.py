@@ -48,13 +48,16 @@ class Crew:
                 persona, self.audit, memory, store=self.store
             )
 
-        self.router = Router(self.sessions, self._post)
+        self.router = Router(self.sessions, self._post, react=self._react)
 
         for cfg in config.personas:
             self.connectors[cfg.name] = connector_factory(cfg, self._on_message)
 
     async def _post(self, persona: str, channel: str, thread: Optional[str], text: str) -> None:
         await self.connectors[persona].post(channel, thread, text)
+
+    async def _react(self, persona: str, channel: str, ts: str, emoji: str, add: bool) -> None:
+        await self.connectors[persona].react(channel, ts, emoji, add)
 
     async def _on_message(self, msg: IncomingMessage) -> None:
         low = msg.text.strip().lower()

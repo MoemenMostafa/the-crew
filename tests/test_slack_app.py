@@ -34,6 +34,7 @@ def test_app_mention_translates_and_strips_mention():
     assert msg.thread == "111.1"
     assert msg.sender == "U999"
     assert msg.text == "please fix the TTS bug"
+    assert msg.ts == "111.1"
 
 
 def test_thread_reply_uses_thread_ts():
