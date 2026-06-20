@@ -35,9 +35,11 @@ class FakeConnector:
         pass
 
 
-def make_config(tmp_path):
+def make_config(tmp_path, personality="Direct."):
     pdir = tmp_path / "personas" / "adam"
     (pdir / "memory").mkdir(parents=True)
+    (pdir / "personality.md").write_text(personality)
+    (pdir / "expertise.md").write_text("Python.")
     cfg = PersonaConfig(
         name="adam",
         display_name="Adam",
@@ -101,6 +103,30 @@ def test_kill_switch_pauses_and_resumes(tmp_path):
         await crew.router.join()
         assert crew.sessions["adam"].calls == ["now work"]
 
+        await crew.stop()
+
+    asyncio.run(run())
+
+
+def test_crew_reload_applies_edited_personality(tmp_path):
+    async def run():
+        crew = Crew(
+            make_config(tmp_path, personality="Original voice."),
+            session_factory=FakeSession,
+            connector_factory=FakeConnector,
+        )
+        await crew.start()
+        conn = crew.connectors["adam"]
+        assert "Original voice." in crew.personas["adam"].system_prompt()
+
+        # Edit the file on disk, then reload via the control word.
+        (tmp_path / "personas" / "adam" / "personality.md").write_text("New voice.")
+        await conn.on_message(IncomingMessage("adam", "#adam-dev", None, "crew-reload", "u"))
+
+        sp = crew.personas["adam"].system_prompt()
+        assert "New voice." in sp
+        assert "Original voice." not in sp
+        assert any("Reloaded" in p for p in conn.posts)
         await crew.stop()
 
     asyncio.run(run())

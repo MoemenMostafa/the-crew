@@ -23,6 +23,7 @@ log = logging.getLogger("crew.service")
 
 _STOP_WORDS = {"/crew-stop", "crew-stop", "crew: stop"}
 _RESUME_WORDS = {"/crew-resume", "crew-resume", "crew: resume"}
+_RELOAD_WORDS = {"/crew-reload", "crew-reload", "crew: reload"}
 
 
 class Crew:
@@ -71,6 +72,17 @@ class Crew:
             self.router.paused = False
             await self.connectors[msg.persona].post(
                 msg.channel, msg.thread, ":white_check_mark: Crew resumed."
+            )
+            return
+        if low in _RELOAD_WORDS:
+            for persona in self.personas.values():
+                persona.reload()
+            await self.connectors[msg.persona].post(
+                msg.channel,
+                msg.thread,
+                ":arrows_counterclockwise: Reloaded personality/expertise for: "
+                + ", ".join(self.personas)
+                + ". (Applies on each persona's next turn. crew.yaml changes still need a restart.)",
             )
             return
         await self.router.handle(msg)
