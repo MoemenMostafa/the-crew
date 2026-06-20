@@ -124,6 +124,21 @@ it up automatically. In channels the crew responds **only to @mentions** (so the
 don't all answer every line); DMs respond to everything. A loop-guard caps
 agent↔agent hops (default 8 in `crew.yaml`/`Router`) and resets whenever a human speaks.
 
+**Dynamic dispatch (unaddressed questions).** In a shared channel, a bare question
+addressed to no one would otherwise get silence (only `@mentions` are acted on, so the
+whole team doesn't answer at once). Enable a **coordinator** in `crew.yaml`:
+
+```yaml
+dispatch:
+  enabled: true
+  coordinator: zakarya
+```
+
+The coordinator picks up unaddressed questions in the channels it's in and either
+answers or `@mentions` the right teammate(s) — who then reply via the normal handoff.
+Explicit `@mentions` always go straight to the named person. Keep the coordinator in
+just `#crew-team` and its own home channel so it only triages where you want.
+
 **Add a teammate:** `cp -r personas/_template personas/<name>`, fill in the two
 markdown files, add a `crew.yaml` entry, create the Slack app (regenerate its manifest
 with `deploy/slack/generate.py`), and flip `enabled: true`.

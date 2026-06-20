@@ -32,6 +32,7 @@ class IncomingMessage:
     sender: str
     ts: Optional[str] = None  # the triggering message's timestamp (for reactions)
     from_agent: bool = False  # sender is a teammate bot (for the loop-guard)
+    dispatch: bool = False  # unaddressed channel question routed to the coordinator
 
 
 class Router:

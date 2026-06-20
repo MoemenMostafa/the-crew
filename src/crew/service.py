@@ -54,8 +54,12 @@ class Crew:
 
         self.router = Router(self.sessions, self._post, react=self._react)
 
+        dp = config.dispatch
+        coordinator = dp.coordinator if (dp and dp.enabled) else None
         for cfg in config.personas:
-            self.connectors[cfg.name] = connector_factory(cfg, self._on_message)
+            self.connectors[cfg.name] = connector_factory(
+                cfg, self._on_message, is_coordinator=(cfg.name == coordinator)
+            )
 
         # Feedback feed → Eva (Phase 3). Only set up if enabled and its persona
         # is actually running.
@@ -157,6 +161,14 @@ class Crew:
                 + ". (Applies on each persona's next turn. crew.yaml changes still need a restart.)",
             )
             return
+        if msg.dispatch:
+            msg.text = (
+                "(Posted in a shared channel without addressing anyone — you're the "
+                "coordinator here.) If this is clearly in your wheelhouse, answer it. "
+                "Otherwise @mention the teammate(s) best suited and hand it to them — "
+                "don't answer on their behalf. If no one needs to act, a one-line ack is fine.\n\n"
+                f"The message:\n{msg.text}"
+            )
         await self.router.handle(msg)
 
     async def start(self) -> None:

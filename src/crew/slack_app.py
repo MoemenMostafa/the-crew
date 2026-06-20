@@ -30,17 +30,17 @@ def resolve_tokens(cfg: PersonaConfig) -> tuple[str, str]:
 
 
 def event_to_incoming(
-    event: dict, persona_name: str, is_mention: bool = False
+    event: dict, persona_name: str, is_mention: bool = False, is_coordinator: bool = False
 ) -> Optional[IncomingMessage]:
     """Translate a Slack event into a turn, or None to ignore it.
 
     Routing policy:
       * ``app_mention`` (``is_mention=True``) → always handled — this persona was
-        explicitly addressed, by a human or a teammate bot (that's how handoffs
-        work).
-      * plain message → handled only in a DM from a human. Channel chatter is
-        ignored so the whole team doesn't answer every line; address someone with
-        an @mention instead.
+        explicitly addressed, by a human or a teammate bot (that's how handoffs work).
+      * plain message in a DM → handled (human 1:1).
+      * plain message in a channel → ignored, *unless* this persona is the
+        coordinator (``is_coordinator``), in which case unaddressed human questions
+        are picked up to triage. Bot/agent channel chatter is always ignored.
     """
     if event.get("subtype"):  # edits, joins, channel_topic, bot_message, etc.
         return None
@@ -52,15 +52,20 @@ def event_to_incoming(
     channel = event.get("channel", "")
     is_dm = event.get("channel_type") == "im" or channel.startswith("D")
     from_agent = bool(event.get("bot_id"))
+    dispatch = False
 
     if is_mention:
         # Reply at root in a DM; in a channel, thread under the message.
         thread = None if is_dm else (event.get("thread_ts") or event.get("ts"))
+    elif is_dm and not from_agent:
+        thread = None  # human DM
+    elif is_coordinator and not from_agent:
+        # Unaddressed human question in a channel → the coordinator triages it,
+        # threaded under the question.
+        thread = event.get("thread_ts") or event.get("ts")
+        dispatch = True
     else:
-        # Only humans DMing us; ignore channel chatter and bot messages.
-        if not is_dm or from_agent:
-            return None
-        thread = None
+        return None  # channel chatter / bot messages we weren't addressed in
 
     return IncomingMessage(
         persona=persona_name,
@@ -70,6 +75,7 @@ def event_to_incoming(
         sender=event.get("user", "unknown"),
         ts=event.get("ts"),
         from_agent=from_agent,
+        dispatch=dispatch,
     )
 
 
@@ -80,9 +86,10 @@ class SlackConnector:
     """Wires one persona's Slack app to the router. Built lazily so importing this
     module (and unit-testing the pure helpers) never requires live tokens."""
 
-    def __init__(self, cfg: PersonaConfig, on_message: OnMessage):
+    def __init__(self, cfg: PersonaConfig, on_message: OnMessage, is_coordinator: bool = False):
         self.cfg = cfg
         self.on_message = on_message
+        self.is_coordinator = is_coordinator
         self._app = None
         self._handler = None
 
@@ -95,7 +102,9 @@ class SlackConnector:
         name = self.cfg.name
 
         async def _route(event, is_mention):
-            msg = event_to_incoming(event, name, is_mention=is_mention)
+            msg = event_to_incoming(
+                event, name, is_mention=is_mention, is_coordinator=self.is_coordinator
+            )
             if msg is not None:
                 await self.on_message(msg)
 

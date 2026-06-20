@@ -5,6 +5,15 @@
 
 audit_log: .logs/audit.jsonl
 
+# Dynamic dispatch: in shared channels, an unaddressed question is picked up by
+# the coordinator persona, who answers it or @mentions the right teammate(s).
+# Explicit @mentions always go straight to the named person. The coordinator
+# triages unaddressed questions in the channels it's in (keep it to #crew-team +
+# its own home channel).
+dispatch:
+  enabled: true
+  coordinator: zakarya
+
 # Phase 3: a project's user-feedback feed -> a persona to triage.
 # Portable: point `source` at any SQLite DB (with a query) or HTTP JSON endpoint.
 # Enable once the triage persona (here Eva) is running.
@@ -40,7 +49,7 @@ feedback:
 #     -d '{"text":"App crashes on login","email":"u@example.com"}'
 # Optional payload fields: id, context, email, persona (override), channel (override).
 webhook:
-  enabled: false
+  enabled: true
   host: 127.0.0.1
   port: 8787
   secret_env: CREW_WEBHOOK_SECRET

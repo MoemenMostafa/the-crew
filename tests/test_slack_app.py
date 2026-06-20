@@ -74,6 +74,26 @@ def test_channel_chatter_without_mention_is_ignored():
     assert event_to_incoming(event, "adam", is_mention=False) is None
 
 
+def test_coordinator_picks_up_unaddressed_channel_question():
+    event = {"channel": "C-crew", "channel_type": "channel", "ts": "9.9", "user": "U1",
+             "text": "what should we build first?"}
+    msg = event_to_incoming(event, "zakarya", is_mention=False, is_coordinator=True)
+    assert msg is not None
+    assert msg.dispatch is True
+    assert msg.thread == "9.9"  # threaded under the question
+
+
+def test_coordinator_ignores_bot_chatter():
+    # Even the coordinator ignores non-mention messages from bots (no dispatch loops).
+    event = {"channel": "C-crew", "ts": "9.9", "bot_id": "B-eva", "text": "fyi"}
+    assert event_to_incoming(event, "zakarya", is_mention=False, is_coordinator=True) is None
+
+
+def test_non_coordinator_still_ignores_unaddressed_channel_question():
+    event = {"channel": "C-crew", "channel_type": "channel", "ts": "9.9", "user": "U1", "text": "hey"}
+    assert event_to_incoming(event, "adam", is_mention=False, is_coordinator=False) is None
+
+
 def test_ignores_subtype_events():
     assert (
         event_to_incoming({"channel": "C1", "ts": "1", "subtype": "message_changed", "text": "x"}, "adam")

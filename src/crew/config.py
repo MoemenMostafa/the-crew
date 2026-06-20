@@ -69,12 +69,19 @@ class WebhookConfig:
 
 
 @dataclass
+class DispatchConfig:
+    enabled: bool
+    coordinator: str
+
+
+@dataclass
 class CrewConfig:
     personas: list[PersonaConfig]
     audit_log: Path
     root: Path
     feedback: "FeedbackConfig | None" = None
     webhook: "WebhookConfig | None" = None
+    dispatch: "DispatchConfig | None" = None
 
 
 def _merge(defaults: dict, override: dict, key, fallback=None):
@@ -143,6 +150,19 @@ def load_config(path: str | Path) -> CrewConfig:
             channel=str(wh.get("channel", "#loquina-feedback")),
         )
 
+    dispatch = None
+    dp = raw.get("dispatch")
+    if dp:
+        dispatch = DispatchConfig(
+            enabled=bool(dp.get("enabled", False)),
+            coordinator=str(dp.get("coordinator", "")),
+        )
+
     return CrewConfig(
-        personas=personas, audit_log=audit_log, root=root, feedback=feedback, webhook=webhook
+        personas=personas,
+        audit_log=audit_log,
+        root=root,
+        feedback=feedback,
+        webhook=webhook,
+        dispatch=dispatch,
     )

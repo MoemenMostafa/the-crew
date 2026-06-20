@@ -1,6 +1,6 @@
 import asyncio
 
-from crew.config import CrewConfig, Guardrails, PersonaConfig
+from crew.config import CrewConfig, DispatchConfig, Guardrails, PersonaConfig
 from crew.router import IncomingMessage
 from crew.service import Crew
 
@@ -16,9 +16,10 @@ class FakeSession:
 
 
 class FakeConnector:
-    def __init__(self, cfg, on_message):
+    def __init__(self, cfg, on_message, is_coordinator=False):
         self.cfg = cfg
         self.on_message = on_message
+        self.is_coordinator = is_coordinator
         self.started = False
         self.posts = []
 
@@ -35,7 +36,7 @@ class FakeConnector:
         pass
 
 
-def make_config(tmp_path, personality="Direct."):
+def make_config(tmp_path, personality="Direct.", coordinator=None):
     pdir = tmp_path / "personas" / "adam"
     (pdir / "memory").mkdir(parents=True)
     (pdir / "personality.md").write_text(personality)
@@ -53,7 +54,32 @@ def make_config(tmp_path, personality="Direct."):
         guardrails=Guardrails(),
         dir=pdir,
     )
-    return CrewConfig(personas=[cfg], audit_log=tmp_path / "audit.jsonl", root=tmp_path)
+    dispatch = DispatchConfig(enabled=True, coordinator=coordinator) if coordinator else None
+    return CrewConfig(
+        personas=[cfg], audit_log=tmp_path / "audit.jsonl", root=tmp_path, dispatch=dispatch
+    )
+
+
+def test_coordinator_dispatch_adds_triage_preamble(tmp_path):
+    async def run():
+        crew = Crew(
+            make_config(tmp_path, coordinator="adam"),
+            session_factory=FakeSession,
+            connector_factory=FakeConnector,
+        )
+        await crew.start()
+        assert crew.connectors["adam"].is_coordinator is True
+
+        await crew.connectors["adam"].on_message(
+            IncomingMessage("adam", "#crew-team", "9.9", "what should we build?", "u", dispatch=True)
+        )
+        await crew.router.join()
+        sent = crew.sessions["adam"].calls[0]
+        assert "coordinator" in sent.lower()       # triage preamble added
+        assert "what should we build?" in sent      # original question preserved
+        await crew.stop()
+
+    asyncio.run(run())
 
 
 def test_start_wires_worker_and_dispatches(tmp_path):
