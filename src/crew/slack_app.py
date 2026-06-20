@@ -29,10 +29,20 @@ def resolve_tokens(cfg: PersonaConfig) -> tuple[str, str]:
     return bot, app
 
 
-def event_to_incoming(event: dict, persona_name: str) -> Optional[IncomingMessage]:
-    """Translate a Slack message/app_mention event. Returns None to ignore it."""
-    # Ignore bot messages (avoid self-loops in Phase 1) and edits/joins/etc.
-    if event.get("bot_id") or event.get("subtype"):
+def event_to_incoming(
+    event: dict, persona_name: str, is_mention: bool = False
+) -> Optional[IncomingMessage]:
+    """Translate a Slack event into a turn, or None to ignore it.
+
+    Routing policy:
+      * ``app_mention`` (``is_mention=True``) → always handled — this persona was
+        explicitly addressed, by a human or a teammate bot (that's how handoffs
+        work).
+      * plain message → handled only in a DM from a human. Channel chatter is
+        ignored so the whole team doesn't answer every line; address someone with
+        an @mention instead.
+    """
+    if event.get("subtype"):  # edits, joins, channel_topic, bot_message, etc.
         return None
 
     text = _MENTION.sub("", event.get("text", "")).strip()
@@ -40,10 +50,17 @@ def event_to_incoming(event: dict, persona_name: str) -> Optional[IncomingMessag
         return None
 
     channel = event.get("channel", "")
-    # In a DM, reply at the root (no thread). In a channel, reply in-thread:
-    # use the existing thread, or open one under the triggering message.
     is_dm = event.get("channel_type") == "im" or channel.startswith("D")
-    thread = None if is_dm else (event.get("thread_ts") or event.get("ts"))
+    from_agent = bool(event.get("bot_id"))
+
+    if is_mention:
+        # Reply at root in a DM; in a channel, thread under the message.
+        thread = None if is_dm else (event.get("thread_ts") or event.get("ts"))
+    else:
+        # Only humans DMing us; ignore channel chatter and bot messages.
+        if not is_dm or from_agent:
+            return None
+        thread = None
 
     return IncomingMessage(
         persona=persona_name,
@@ -52,6 +69,7 @@ def event_to_incoming(event: dict, persona_name: str) -> Optional[IncomingMessag
         text=text,
         sender=event.get("user", "unknown"),
         ts=event.get("ts"),
+        from_agent=from_agent,
     )
 
 
@@ -76,18 +94,18 @@ class SlackConnector:
         app = AsyncApp(token=bot_token)
         name = self.cfg.name
 
-        async def _route(event):
-            msg = event_to_incoming(event, name)
+        async def _route(event, is_mention):
+            msg = event_to_incoming(event, name, is_mention=is_mention)
             if msg is not None:
                 await self.on_message(msg)
 
         @app.event("app_mention")
         async def _on_mention(event, ack=None):  # pragma: no cover - needs live socket
-            await _route(event)
+            await _route(event, is_mention=True)
 
         @app.event("message")
         async def _on_message(event, ack=None):  # pragma: no cover - needs live socket
-            await _route(event)
+            await _route(event, is_mention=False)
 
         self._app = app
         self._handler = AsyncSocketModeHandler(app, app_token)
@@ -105,7 +123,7 @@ class SlackConnector:
         if self._app is None:
             self._build()
         await self._app.client.chat_postMessage(
-            channel=channel, thread_ts=thread, text=text
+            channel=channel, thread_ts=thread, text=text, link_names=True
         )
 
     async def react(self, channel: str, ts: str, emoji: str, add: bool) -> None:  # pragma: no cover

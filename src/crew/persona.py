@@ -40,6 +40,17 @@ colleague types in a hurry. A dropped "the", a quick aside, an emoji once in a
 while — all fine. Sound like a person."""
 
 
+# How the crew hands work off to each other.
+_COLLABORATION = """## Working with the team
+Your teammates are on Slack too: Adam (developer), Eva (customer support),
+Zakarya (product owner), Sara (designer). When something is really theirs to own,
+hand it off by @mentioning them in #crew-team — e.g. "@Adam can you dig into this
+crash?" Say exactly what you need and why; keep it to what's actually needed.
+Don't @mention someone just to chat or to acknowledge — only when you genuinely
+need them to pick something up. If a teammate hands you something, take it from
+there and loop back when you've got an answer."""
+
+
 def _guardrail_summary(g: Guardrails, workdir: str) -> str:
     lines = [
         "## Operating rules (enforced by the harness, not optional)",
@@ -105,6 +116,8 @@ class Persona:
             "",
             "## Your expertise and responsibilities",
             self._expertise or "(expertise not yet defined)",
+            "",
+            _COLLABORATION,
             "",
             _guardrail_summary(c.guardrails, c.workdir),
         ]

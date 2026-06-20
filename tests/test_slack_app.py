@@ -28,40 +28,53 @@ def test_app_mention_translates_and_strips_mention():
         "user": "U999",
         "text": "<@UBOT> please fix the TTS bug",
     }
-    msg = event_to_incoming(event, "adam")
+    msg = event_to_incoming(event, "adam", is_mention=True)
     assert msg.persona == "adam"
     assert msg.channel == "C123"
     assert msg.thread == "111.1"
     assert msg.sender == "U999"
     assert msg.text == "please fix the TTS bug"
     assert msg.ts == "111.1"
+    assert msg.from_agent is False
 
 
-def test_thread_reply_uses_thread_ts():
-    event = {"channel": "C1", "ts": "222.2", "thread_ts": "111.1", "user": "U1", "text": "hi"}
-    msg = event_to_incoming(event, "adam")
+def test_mention_in_thread_uses_thread_ts():
+    event = {"channel": "C1", "ts": "222.2", "thread_ts": "111.1", "user": "U1", "text": "<@U> hi"}
+    msg = event_to_incoming(event, "adam", is_mention=True)
     assert msg.thread == "111.1"
 
 
-def test_dm_replies_at_root_not_in_thread():
-    # channel_type "im" -> a direct message; reply should go to the root (no thread).
+def test_top_level_channel_mention_opens_thread():
+    event = {"channel": "C1", "channel_type": "channel", "ts": "5.5", "user": "U1", "text": "<@U> hi"}
+    assert event_to_incoming(event, "adam", is_mention=True).thread == "5.5"
+
+
+def test_app_mention_from_teammate_marks_from_agent():
+    # A teammate bot @mentioning this persona is a handoff — route it, flagged.
+    event = {"channel": "C-crew", "ts": "9.9", "bot_id": "B-eva", "text": "<@U> can you fix this?"}
+    msg = event_to_incoming(event, "adam", is_mention=True)
+    assert msg is not None
+    assert msg.from_agent is True
+
+
+def test_dm_message_replies_at_root():
     event = {"channel": "D123", "channel_type": "im", "ts": "1.1", "user": "U1", "text": "hi"}
-    msg = event_to_incoming(event, "adam")
+    msg = event_to_incoming(event, "adam", is_mention=False)
+    assert msg is not None
     assert msg.thread is None
 
 
 def test_dm_detected_by_channel_id_prefix():
     event = {"channel": "D999", "ts": "1.1", "user": "U1", "text": "hi"}
-    assert event_to_incoming(event, "adam").thread is None
+    assert event_to_incoming(event, "adam", is_mention=False) is not None
 
 
-def test_top_level_channel_message_opens_thread():
-    event = {"channel": "C1", "channel_type": "channel", "ts": "5.5", "user": "U1", "text": "hi"}
-    assert event_to_incoming(event, "adam").thread == "5.5"
+def test_channel_chatter_without_mention_is_ignored():
+    event = {"channel": "C1", "channel_type": "channel", "ts": "1", "user": "U1", "text": "just talking"}
+    assert event_to_incoming(event, "adam", is_mention=False) is None
 
 
-def test_ignores_bot_and_subtype_events():
-    assert event_to_incoming({"channel": "C1", "ts": "1", "bot_id": "B1", "text": "x"}, "adam") is None
+def test_ignores_subtype_events():
     assert (
         event_to_incoming({"channel": "C1", "ts": "1", "subtype": "message_changed", "text": "x"}, "adam")
         is None
@@ -69,7 +82,9 @@ def test_ignores_bot_and_subtype_events():
 
 
 def test_ignores_empty_text():
-    assert event_to_incoming({"channel": "C1", "ts": "1", "user": "U1", "text": "   "}, "adam") is None
+    assert event_to_incoming(
+        {"channel": "D1", "channel_type": "im", "ts": "1", "user": "U1", "text": "   "}, "adam"
+    ) is None
 
 
 def test_resolve_tokens_reads_env(monkeypatch):

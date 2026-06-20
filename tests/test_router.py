@@ -122,6 +122,51 @@ def test_no_reactions_without_ts(tmp_path):
     assert asyncio.run(run()) == []
 
 
+def test_loop_guard_bounds_agent_chatter(tmp_path):
+    async def run():
+        sess = FakeSession()
+        posts = []
+
+        async def post(persona, channel, thread, text):
+            posts.append(text)
+
+        router = Router({"adam": sess}, post, ack_text=None, max_agent_hops=3)
+        # 4 consecutive agent-originated messages: first 3 run, 4th is dropped.
+        for i in range(4):
+            await router.handle(
+                IncomingMessage("adam", "#crew-team", None, f"hop {i}", "eva", from_agent=True)
+            )
+        await router.join()
+        await router.stop()
+        return sess.calls, posts
+
+    calls, posts = asyncio.run(run())
+    assert calls == ["hop 0", "hop 1", "hop 2"]  # 4th dropped by the guard
+    assert any("loop guard" in p for p in posts)  # one-time notice posted
+
+
+def test_human_message_resets_loop_guard(tmp_path):
+    async def run():
+        sess = FakeSession()
+
+        async def post(persona, channel, thread, text):
+            pass
+
+        router = Router({"adam": sess}, post, ack_text=None, max_agent_hops=2)
+        # Trip the guard with agent hops, then a human speaks → counter resets.
+        for i in range(3):
+            await router.handle(IncomingMessage("adam", "#c", None, f"a{i}", "eva", from_agent=True))
+        await router.handle(IncomingMessage("adam", "#c", None, "human here", "U1", from_agent=False))
+        await router.handle(IncomingMessage("adam", "#c", None, "after reset", "eva", from_agent=True))
+        await router.join()
+        await router.stop()
+        return sess.calls
+
+    calls = asyncio.run(run())
+    assert "human here" in calls
+    assert "after reset" in calls  # agent chatter works again post-reset
+
+
 def test_unknown_persona_ignored(tmp_path):
     async def run():
         router = Router({}, lambda *a: None)

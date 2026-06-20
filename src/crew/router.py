@@ -31,6 +31,7 @@ class IncomingMessage:
     text: str
     sender: str
     ts: Optional[str] = None  # the triggering message's timestamp (for reactions)
+    from_agent: bool = False  # sender is a teammate bot (for the loop-guard)
 
 
 class Router:
@@ -40,12 +41,17 @@ class Router:
         post: PostFn,
         ack_text: Optional[str] = "🛠️ On it…",
         react: Optional[ReactFn] = None,
+        max_agent_hops: int = 8,
     ):
         self.sessions = sessions
         self.post = post
         self.ack_text = ack_text  # immediate acknowledgement; None disables it
         self.react = react  # optional 👀/✅ working indicator
         self.paused = False
+        # Loop-guard: cap consecutive agent→agent hops without a human in between.
+        self.max_agent_hops = max_agent_hops
+        self._agent_hops = 0
+        self._loop_notified = False
         self._queues: dict[str, asyncio.Queue] = {}
         self._workers: dict[str, asyncio.Task] = {}
 
@@ -64,6 +70,27 @@ class Router:
         if msg.persona not in self.sessions:
             log.warning("no session for persona %r — ignoring", msg.persona)
             return
+
+        # Loop-guard: a human message resets the chain; agent→agent messages are
+        # bounded so two personas can't ping-pong forever.
+        if msg.from_agent:
+            self._agent_hops += 1
+            if self._agent_hops > self.max_agent_hops:
+                if not self._loop_notified:
+                    self._loop_notified = True
+                    await self.post(
+                        msg.persona,
+                        msg.channel,
+                        msg.thread,
+                        ":vertical_traffic_light: Pausing agent-to-agent chatter — "
+                        "hit the loop guard. A human can pick it back up.",
+                    )
+                log.warning("loop guard: dropping agent hop %d for %s", self._agent_hops, msg.persona)
+                return
+        else:
+            self._agent_hops = 0
+            self._loop_notified = False
+
         await self._queue(msg.persona).put(msg)
 
     def _queue(self, name: str) -> asyncio.Queue:
