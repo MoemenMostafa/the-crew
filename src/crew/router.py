@@ -39,13 +39,15 @@ class Router:
         self,
         sessions: dict,
         post: PostFn,
-        ack_text: Optional[str] = "🛠️ On it…",
+        ack_text: Optional[str] = None,
         react: Optional[ReactFn] = None,
         max_agent_hops: int = 8,
     ):
         self.sessions = sessions
         self.post = post
-        self.ack_text = ack_text  # immediate acknowledgement; None disables it
+        # Text acknowledgement; default None — the 👀/✅ reaction is the working
+        # ("typing") indicator. Set a string to also post a worded ack.
+        self.ack_text = ack_text
         self.react = react  # optional 👀/✅ working indicator
         self.paused = False
         # Loop-guard: cap consecutive agent→agent hops without a human in between.

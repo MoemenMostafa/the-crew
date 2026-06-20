@@ -69,9 +69,8 @@ def test_start_wires_worker_and_dispatches(tmp_path):
 
         await conn.on_message(IncomingMessage("adam", "#adam-dev", None, "hello", "u"))
         await crew.router.join()
-        # Immediate ack first, then the reply.
-        assert conn.posts[0] == "🛠️ On it…"
-        assert conn.posts[-1] == "done"
+        # No text ack by default (the reaction is the indicator); just the reply.
+        assert conn.posts == ["done"]
         assert crew.sessions["adam"].calls == ["hello"]
 
         await crew.stop()
