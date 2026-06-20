@@ -9,9 +9,10 @@ session with its own character, expertise, memory, Slack identity, and guardrail
 The runtime is one always-on Python process using Slack **Socket Mode** (no inbound
 URL — works behind a corporate proxy).
 
-> **Status:** Phase 1 ships the full spine with **Adam** only, built so adding the
-> rest of the team (Phase 2) is configuration, not new code. See
-> `docs/superpowers/specs/` for the design and `docs/superpowers/plans/` for the plan.
+> **Status:** Adam (Senior Dev) is live. Eva (Support), Zakarya (Product), and Sara
+> (Design) are written and ready — they just need their own Slack apps and an
+> `enabled: true` flip. Inter-agent `@mention` handoffs and the loop-guard are wired.
+> See `docs/superpowers/specs/` for the design and `docs/superpowers/plans/` for the plan.
 
 ## How it works
 
@@ -86,6 +87,36 @@ branch for any code change, and reply in-thread. Watch `.logs/audit.jsonl` to se
 every tool action.
 
 **Stop:** post `crew-stop` in a channel, or Ctrl+C the process.
+
+## Adding the rest of the team (Eva, Zakarya, Sara)
+
+Their personas are already written (`personas/<name>/`) and stubbed in `crew.yaml`.
+To bring each one online:
+
+1. **Create a Slack app per persona** — same steps as Adam (§B–E above), naming the
+   app exactly **Eva** / **Zakarya** / **Sara**. The name matters: handoffs rely on an
+   agent typing `@Eva` resolving to that bot, so the app's handle must match.
+2. **Tokens** → add each pair to `.env` (`EVA_SLACK_BOT_TOKEN` / `EVA_SLACK_APP_TOKEN`,
+   etc. — placeholders already in `.env.example`).
+3. **Channels** — create `#eva-support`, `#zakarya-product`, `#sara-design`, the shared
+   **`#crew-team`**, and `#loquina-feedback`; invite each bot to its channels (every bot
+   that should collaborate must be in `#crew-team`).
+4. **Enable** them in `crew.yaml`: flip `enabled: true` for eva/zakarya/sara.
+5. Restart `./run.sh` — you'll see one `⚡️ Bolt app is running!` per persona.
+
+**How they collaborate:** address someone with an `@mention` in a channel (e.g.
+`@Zakarya what should we build first?`). When an agent `@mentions` a teammate in
+`#crew-team`, that teammate picks it up automatically. A loop-guard caps back-and-forth
+agent chatter (default 8 hops) and resets whenever a human speaks. In channels the crew
+responds **only to @mentions** (so they don't all answer every line); DMs respond to
+everything.
+
+**To add a future teammate:** `cp -r personas/_template personas/<name>`, fill in the two
+markdown files, add a `crew.yaml` entry, create the Slack app, flip `enabled: true`.
+
+**Optional — working indicator:** add the **`reactions:write`** scope to each app (OAuth &
+Permissions → reinstall) to get the 👀-while-working → ✅-when-done reaction. Without it,
+replies still work; the reaction is just skipped.
 
 ## Layout
 
