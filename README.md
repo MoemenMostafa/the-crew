@@ -32,6 +32,11 @@ You ──Slack @Adam──▶ Crew (Socket Mode) ──▶ persona's Agent SDK 
   start, updated by the agent as it learns. Conversations resume across restarts too.
 - **Collaboration** — agents hand off by `@mention`ing each other in `#crew-team`; a
   loop-guard bounds runaway agent↔agent chatter.
+- **Working indicator** — 👀 on your message while a persona works, progress streamed
+  as it goes, ✅ when done (see [Working indicator](#working-indicator)).
+- **Feedback in** — a project's user feedback can reach a persona two ways: the crew
+  **pulls** (polls a DB/API) or a project **pushes** via a secure webhook (see
+  [Feedback feed](#feedback-feed-portable)).
 - **Guardrails** — branch-only (never commit to a protected branch), `rm -rf` /
   force-push / prod-deploy blocked, every tool action logged to `.logs/audit.jsonl`.
 - **Controls** — `crew-stop` / `crew-resume` (kill switch) and `crew-reload` (re-read
@@ -95,6 +100,22 @@ The persona works in your configured repo, branches for any code change, and rep
 in-thread (DMs reply at the root). Watch `.logs/audit.jsonl` for every tool action.
 **Stop:** post `crew-stop`, or Ctrl+C.
 
+## Working indicator
+
+While a persona works, it adds a 👀 reaction to your message, streams its progress as
+messages, and swaps 👀 for ✅ when done. DMs reply at the root; channel replies thread
+under your message.
+
+> **Note:** Slack does **not** let bots show the native "X is typing…" indicator in
+> channels or DMs (that's only available via the deprecated RTM API or Slack's separate
+> AI-Assistant container). The 👀 → ✅ reaction is the closest chat-native equivalent.
+
+The reaction needs the **`reactions:write`** scope on each app:
+- Personas created from `deploy/slack/` manifests already include it.
+- An app you created by hand may not — add `reactions:write` under **OAuth &
+  Permissions** and reinstall, or that persona just won't show the 👀/✅ (replies still
+  work). Without the scope the reaction is silently skipped.
+
 ## Collaboration
 
 Address a teammate with an `@mention` in a channel (e.g. `@Zakarya what's the
@@ -109,8 +130,13 @@ with `deploy/slack/generate.py`), and flip `enabled: true`.
 
 ## Feedback feed (portable)
 
-A project's user-feedback feed can flow to a persona for triage — **config-only and
-portable**, via `crew.yaml → feedback`:
+A project's user-feedback can reach a triage persona two ways — use either or both:
+
+- **Pull** — the crew polls the project's feedback store (SQLite or an HTTP/JSON API).
+- **Push** — the project POSTs feedback to the crew's [secure webhook](#push-instead-of-pull-secure-webhook).
+
+Both are **config-only and portable** (`crew.yaml → feedback` / `webhook`) and feed the
+exact same triage path. Pull setup, via `crew.yaml → feedback`:
 
 - `source.type: sqlite` — read-only against any SQLite DB; supply a `query` that
   aliases columns to the canonical names (`id, text, context, created_at, email,
