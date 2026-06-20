@@ -84,16 +84,16 @@ personas:
     channels: ["#eva-support", "#crew-team", "#loquina-feedback"]
     external_comms: gated
     require_branch: true
-    enabled: false
+    enabled: true
 
   zakarya:
     display_name: Zakarya
     role: Product Owner & Marketing
     channels: ["#zakarya-product", "#crew-team"]
-    enabled: false
+    enabled: true
 
   sara:
     display_name: Sara
     role: Designer
     channels: ["#sara-design", "#crew-team"]
-    enabled: false
+    enabled: true
