@@ -203,3 +203,9 @@ def test_thread_transcript_passed_as_context(tmp_path):
     contexts = asyncio.run(run())
     assert "brought into a thread" in contexts[0]
     assert "improve the landing UX" in contexts[0]
+
+
+def test_humanize_ids_replaces_raw_mentions():
+    from crew.router import humanize_ids
+    names = {"U0BBVG428US": "Zakarya"}
+    assert humanize_ids("<@U0BBVG428US> ping <@UNKNOWN1>", names) == "@Zakarya ping @someone"

@@ -18,7 +18,7 @@ from .feedback import FeedbackItem, FeedbackPoller, build_feedback_source
 from .memory import Memory
 from .persona import Persona
 from .router import IncomingMessage, Router
-from .slack_app import SlackConnector, rewrite_mentions
+from .slack_app import SlackConnector, rewrite_mentions, to_slack_mrkdwn
 from .state import SessionStore
 from .webhook import WebhookServer
 
@@ -53,8 +53,14 @@ class Crew:
             )
 
         self.mention_map: dict = {}  # lowercased name/display-name -> bot user id
+        self.id_to_name: dict = {}  # bot user id -> display name (for humanizing context)
         self.router = Router(
-            self.sessions, self._post, react=self._react, fetch_thread=self._fetch_thread
+            self.sessions,
+            self._post,
+            react=self._react,
+            fetch_thread=self._fetch_thread,
+            names=self.id_to_name,
+            operator=config.operator,
         )
 
         dp = config.dispatch
@@ -134,6 +140,7 @@ class Crew:
         await self._route_feedback(item, persona or wh.persona, channel or wh.channel)
 
     async def _post(self, persona: str, channel: str, thread: Optional[str], text: str) -> None:
+        text = to_slack_mrkdwn(text)  # **bold**/##/links -> Slack's mrkdwn
         text = rewrite_mentions(text, self.mention_map)  # @Sara -> <@BOT_ID> so handoffs ping
         await self.connectors[persona].post(channel, thread, text)
 
@@ -197,8 +204,10 @@ class Crew:
         for name, conn in self.connectors.items():
             uid = getattr(conn, "bot_user_id", None)
             if uid:
+                display = self.personas[name].cfg.display_name
                 self.mention_map[name.lower()] = uid
-                self.mention_map[self.personas[name].cfg.display_name.lower()] = uid
+                self.mention_map[display.lower()] = uid
+                self.id_to_name[uid] = display  # reverse: for humanizing context/transcripts
         log.info("mention map resolved for: %s", ", ".join(sorted(set(self.mention_map))))
 
         if self.feedback_poller is not None:

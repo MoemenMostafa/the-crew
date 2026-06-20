@@ -48,6 +48,7 @@ class PersonaConfig:
     guardrails: Guardrails
     dir: Path
     mcp_servers: dict = field(default_factory=dict)  # name -> Agent SDK MCP server config
+    operator: str = "the operator"  # how personas refer to the human running the team
 
 
 @dataclass
@@ -80,6 +81,7 @@ class CrewConfig:
     personas: list[PersonaConfig]
     audit_log: Path
     root: Path
+    operator: str = "the operator"
     feedback: "FeedbackConfig | None" = None
     webhook: "WebhookConfig | None" = None
     dispatch: "DispatchConfig | None" = None
@@ -101,6 +103,7 @@ def load_config(path: str | Path) -> CrewConfig:
     personas_raw = raw.get("personas", {}) or {}
     # Registry of named MCP servers a persona can opt into (e.g. a browser).
     mcp_registry = raw.get("mcp_servers", {}) or {}
+    operator = str(raw.get("operator", "the operator"))
 
     personas: list[PersonaConfig] = []
     for name, entry in personas_raw.items():
@@ -130,6 +133,7 @@ def load_config(path: str | Path) -> CrewConfig:
                 guardrails=guardrails,
                 dir=root / "personas" / name,
                 mcp_servers=mcp_servers,
+                operator=operator,
             )
         )
 
@@ -170,6 +174,7 @@ def load_config(path: str | Path) -> CrewConfig:
         personas=personas,
         audit_log=audit_log,
         root=root,
+        operator=operator,
         feedback=feedback,
         webhook=webhook,
         dispatch=dispatch,

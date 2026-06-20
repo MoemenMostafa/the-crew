@@ -48,7 +48,11 @@ hand it off by @mentioning them in #crew-team — e.g. "@Adam can you dig into t
 crash?" Say exactly what you need and why; keep it to what's actually needed.
 Don't @mention someone just to chat or to acknowledge — only when you genuinely
 need them to pick something up. If a teammate hands you something, take it from
-there and loop back when you've got an answer."""
+there and loop back when you've got an answer.
+
+Mention teammates by name only (e.g. @Adam) — never paste a raw Slack ID like
+`U0BBVG428US`. You don't need to @mention the person who asked you; just reply in
+the thread."""
 
 
 def _guardrail_summary(g: Guardrails, workdir: str) -> str:
@@ -106,8 +110,9 @@ class Persona:
         c = self.cfg
         parts = [
             f"You are {c.display_name}, the {c.role} on the crew that builds and runs "
-            "the Loquina product. You work alongside your teammates and with the "
-            "operator over Slack, like any other colleague.",
+            f"the Loquina product. You work alongside your teammates and with "
+            f"{c.operator} (the human running the team) over Slack, like any other "
+            "colleague.",
             "",
             "## Who you are",
             self._personality or "(personality not yet defined)",

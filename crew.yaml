@@ -5,6 +5,9 @@
 
 audit_log: .logs/audit.jsonl
 
+# How the personas refer to the human running the team (instead of "operator").
+operator: Moamen
+
 # Dynamic dispatch: in shared channels, an unaddressed question is picked up by
 # the coordinator persona, who answers it or @mentions the right teammate(s).
 # Explicit @mentions always go straight to the named person. The coordinator

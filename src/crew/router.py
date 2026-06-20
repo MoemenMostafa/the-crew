@@ -9,10 +9,19 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
 
 log = logging.getLogger("crew.router")
+
+_SLACK_ID = re.compile(r"<@([A-Z0-9]+)>")
+
+
+def humanize_ids(text: str, names: dict) -> str:
+    """Replace raw Slack mentions <@U123> with @Name (or @someone) so agents never
+    see or parrot raw user IDs."""
+    return _SLACK_ID.sub(lambda m: "@" + names.get(m.group(1), "someone"), text)
 
 # post(persona, channel, thread, text) -> awaitable  (persona names the bot that replies)
 PostFn = Callable[[str, str, Optional[str], str], Awaitable[None]]
@@ -45,6 +54,8 @@ class Router:
         ack_text: Optional[str] = None,
         react: Optional[ReactFn] = None,
         fetch_thread: Optional[FetchThreadFn] = None,
+        names: Optional[dict] = None,
+        operator: str = "the operator",
         max_agent_hops: int = 8,
     ):
         self.sessions = sessions
@@ -54,6 +65,8 @@ class Router:
         self.ack_text = ack_text
         self.react = react  # optional 👀/✅ working indicator
         self.fetch_thread = fetch_thread  # optional: read the thread for context
+        self.names = names if names is not None else {}  # bot user id -> display name
+        self.operator = operator  # label for the human (unknown senders)
         self.paused = False
         # Loop-guard: cap consecutive agent→agent hops without a human in between.
         self.max_agent_hops = max_agent_hops
@@ -126,12 +139,13 @@ class Router:
                     posted = True
                     await self.post(_name, _msg.channel, _msg.thread, text)
 
-                context = f"[Slack {msg.channel} — message from {msg.sender}]"
+                sender = self.names.get(msg.sender) or self.operator
+                context = f"[Slack {msg.channel} — message from {sender}]"
                 if msg.thread and self.fetch_thread is not None:
                     try:
                         lines = await self.fetch_thread(name, msg.channel, msg.thread)
                         if lines:
-                            transcript = "\n".join(lines)
+                            transcript = "\n".join(humanize_ids(l, self.names) for l in lines)
                             context = (
                                 f"[Slack {msg.channel}] You've been brought into a thread. "
                                 f"The conversation so far:\n{transcript}\n\n"

@@ -1,7 +1,12 @@
 import pytest
 
 from crew.config import Guardrails, PersonaConfig
-from crew.slack_app import event_to_incoming, resolve_tokens, rewrite_mentions
+from crew.slack_app import (
+    event_to_incoming,
+    resolve_tokens,
+    rewrite_mentions,
+    to_slack_mrkdwn,
+)
 
 
 def cfg():
@@ -133,3 +138,12 @@ def test_rewrite_mentions_links_known_names():
 
 def test_rewrite_mentions_empty_map_is_noop():
     assert rewrite_mentions("@Sara hi", {}) == "@Sara hi"
+
+
+def test_to_slack_mrkdwn_converts_markdown():
+    assert to_slack_mrkdwn("**End nudge:** hi") == "*End nudge:* hi"
+    assert to_slack_mrkdwn("## Subhead") == "*Subhead*"
+    assert to_slack_mrkdwn("~~old~~") == "~old~"
+    assert to_slack_mrkdwn("see [docs](https://x.test/y)") == "see <https://x.test/y|docs>"
+    # already-Slack single-asterisk bold is left alone
+    assert to_slack_mrkdwn("*keep*") == "*keep*"

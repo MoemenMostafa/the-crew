@@ -18,6 +18,24 @@ _MENTION = re.compile(r"<@[A-Z0-9]+>")
 _AT = re.compile(r"@([A-Za-z][A-Za-z0-9._-]*)")
 
 
+def to_slack_mrkdwn(text: str) -> str:
+    """Convert standard Markdown (what the model writes) to Slack mrkdwn.
+
+    Slack uses *bold* (not **bold**), _italic_, ~strike~ (not ~~), no #-headings,
+    and <url|label> links. Without this, replies show literal '**', '##', etc.
+    """
+    # Links [label](url) -> <url|label>  (do first, before * handling)
+    text = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r"<\2|\1>", text)
+    # Headings: leading #..###### -> bold line
+    text = re.sub(r"(?m)^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$", r"*\1*", text)
+    # Bold: **x** or __x__ -> *x*
+    text = re.sub(r"\*\*(.+?)\*\*", r"*\1*", text)
+    text = re.sub(r"(?<!\w)__(.+?)__(?!\w)", r"*\1*", text)
+    # Strikethrough ~~x~~ -> ~x~
+    text = re.sub(r"~~(.+?)~~", r"~\1~", text)
+    return text
+
+
 def rewrite_mentions(text: str, name_to_id: dict) -> str:
     """Turn '@Sara' into a real Slack mention '<@SARA_BOT_ID>' so the bot is pinged.
 
