@@ -17,6 +17,7 @@ from .memory import Memory
 from .persona import Persona
 from .router import IncomingMessage, Router
 from .slack_app import SlackConnector
+from .state import SessionStore
 
 log = logging.getLogger("crew.service")
 
@@ -34,6 +35,7 @@ class Crew:
     ):
         self.config = config
         self.audit = AuditLog(config.audit_log)
+        self.store = SessionStore(config.root / "state" / "sessions.json")
         self.personas: dict[str, Persona] = {}
         self.sessions: dict[str, object] = {}
         self.connectors: dict[str, object] = {}
@@ -42,7 +44,9 @@ class Crew:
             persona = Persona.load(cfg)
             memory = Memory(cfg.dir / "memory")
             self.personas[cfg.name] = persona
-            self.sessions[cfg.name] = session_factory(persona, self.audit, memory)
+            self.sessions[cfg.name] = session_factory(
+                persona, self.audit, memory, store=self.store
+            )
 
         self.router = Router(self.sessions, self._post)
 

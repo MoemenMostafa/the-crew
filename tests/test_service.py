@@ -6,8 +6,9 @@ from crew.service import Crew
 
 
 class FakeSession:
-    def __init__(self, persona, audit, memory):
+    def __init__(self, persona, audit, memory, store=None):
         self.calls = []
+        self.store = store
 
     async def ask(self, text, context="", on_update=None):
         self.calls.append(text)

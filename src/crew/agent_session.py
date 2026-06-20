@@ -25,6 +25,7 @@ from .audit import AuditLog
 from .guardrails import make_can_use_tool
 from .memory import Memory
 from .persona import Persona
+from .state import SessionStore
 
 
 class AgentSession:
@@ -34,17 +35,20 @@ class AgentSession:
         audit: AuditLog,
         memory: Memory,
         client_factory: Callable[..., object] = ClaudeSDKClient,
+        store: Optional[SessionStore] = None,
     ):
         self.persona = persona
         self.audit = audit
         self.memory = memory
         self._client_factory = client_factory
-        self.session_id: Optional[str] = None
+        self.store = store
+        # Resume the prior conversation across restarts when a store is present.
+        self.session_id: Optional[str] = store.get(persona.name) if store else None
         self._can_use_tool = make_can_use_tool(
             persona.name, persona.cfg.guardrails, audit
         )
 
-    def _options(self, system_prompt: str) -> ClaudeAgentOptions:
+    def _options(self, system_prompt: str, resume: Optional[str]) -> ClaudeAgentOptions:
         # Route ALL tool calls through the guardrail hook (no pre-allowlist) so
         # nothing dangerous slips past unaudited.
         return ClaudeAgentOptions(
@@ -53,8 +57,13 @@ class AgentSession:
             model=self.persona.cfg.model,
             permission_mode="default",
             can_use_tool=self._can_use_tool,
-            resume=self.session_id,
+            resume=resume,
         )
+
+    def _remember_session(self, session_id: str) -> None:
+        self.session_id = session_id
+        if self.store is not None:
+            self.store.set(self.persona.name, session_id)
 
     async def ask(
         self,
@@ -66,9 +75,26 @@ class AgentSession:
         messages is delivered as it streams in (live progress), and the full
         transcript is returned for logging. Without it, the joined text is returned."""
         system_prompt = self.persona.system_prompt(self.memory.read())
-        options = self._options(system_prompt)
         prompt = f"{context}\n\n{text}".strip() if context else text
 
+        try:
+            return await self._run(system_prompt, prompt, on_update, self.session_id)
+        except Exception:
+            # A resumed session id may be stale/missing (e.g. CLI session pruned).
+            # Drop it and retry once from a fresh conversation rather than failing.
+            if self.session_id is not None:
+                self.session_id = None
+                return await self._run(system_prompt, prompt, on_update, None)
+            raise
+
+    async def _run(
+        self,
+        system_prompt: str,
+        prompt: str,
+        on_update,
+        resume: Optional[str],
+    ) -> str:
+        options = self._options(system_prompt, resume)
         chunks: list[str] = []
         async with self._client_factory(options=options) as client:
             await client.query(prompt)
@@ -83,5 +109,5 @@ class AgentSession:
                             await on_update(joined)
                 elif isinstance(msg, ResultMessage):
                     if msg.session_id:
-                        self.session_id = msg.session_id
+                        self._remember_session(msg.session_id)
         return "\n\n".join(chunks).strip()
