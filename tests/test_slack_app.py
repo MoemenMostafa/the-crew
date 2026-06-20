@@ -42,6 +42,23 @@ def test_thread_reply_uses_thread_ts():
     assert msg.thread == "111.1"
 
 
+def test_dm_replies_at_root_not_in_thread():
+    # channel_type "im" -> a direct message; reply should go to the root (no thread).
+    event = {"channel": "D123", "channel_type": "im", "ts": "1.1", "user": "U1", "text": "hi"}
+    msg = event_to_incoming(event, "adam")
+    assert msg.thread is None
+
+
+def test_dm_detected_by_channel_id_prefix():
+    event = {"channel": "D999", "ts": "1.1", "user": "U1", "text": "hi"}
+    assert event_to_incoming(event, "adam").thread is None
+
+
+def test_top_level_channel_message_opens_thread():
+    event = {"channel": "C1", "channel_type": "channel", "ts": "5.5", "user": "U1", "text": "hi"}
+    assert event_to_incoming(event, "adam").thread == "5.5"
+
+
 def test_ignores_bot_and_subtype_events():
     assert event_to_incoming({"channel": "C1", "ts": "1", "bot_id": "B1", "text": "x"}, "adam") is None
     assert (

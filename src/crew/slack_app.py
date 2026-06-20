@@ -39,10 +39,16 @@ def event_to_incoming(event: dict, persona_name: str) -> Optional[IncomingMessag
     if not text:
         return None
 
+    channel = event.get("channel", "")
+    # In a DM, reply at the root (no thread). In a channel, reply in-thread:
+    # use the existing thread, or open one under the triggering message.
+    is_dm = event.get("channel_type") == "im" or channel.startswith("D")
+    thread = None if is_dm else (event.get("thread_ts") or event.get("ts"))
+
     return IncomingMessage(
         persona=persona_name,
-        channel=event.get("channel", ""),
-        thread=event.get("thread_ts") or event.get("ts"),
+        channel=channel,
+        thread=thread,
         text=text,
         sender=event.get("user", "unknown"),
     )
