@@ -46,7 +46,7 @@ personas:
 
   zakarya:
     display_name: Zakarya
-    role: Product Owner
+    role: Product Owner & Marketing
     channels: ["#zakarya-product", "#crew-team"]
     enabled: false
 

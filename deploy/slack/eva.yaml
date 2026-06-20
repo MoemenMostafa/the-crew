@@ -1,0 +1,41 @@
+# Paste this at api.slack.com/apps -> Create New App -> "From a manifest"
+# (pick the loquina workspace). After creating, you still need two tokens:
+#   1. Install App -> Install to workspace        -> Bot token (xoxb-)
+#   2. Basic Information -> App-Level Tokens -> Generate (connections:write)
+#                                                 -> App token (xapp-)
+# Put both in crew/.env. See deploy/slack/_template.yaml for details.
+
+display_information:
+  name: Eva
+  description: Eva — Customer Support on the Loquina crew
+  background_color: "#0e1f1d"
+features:
+  bot_user:
+    display_name: Eva
+    always_online: true
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true            # allows DMs to this persona
+    messages_tab_read_only_enabled: false # users can send messages in the DM tab
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read     # receive @mentions
+      - chat:write            # post replies
+      - channels:history      # read public-channel messages
+      - groups:history        # read private-channel messages
+      - im:history            # read DMs
+      - im:read               # DM metadata
+      - im:write              # open/write DMs
+      - reactions:write       # 👀/✅ working indicator
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
+      - message.im
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true   # no public Request URL needed
