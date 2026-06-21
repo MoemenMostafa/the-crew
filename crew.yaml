@@ -17,6 +17,15 @@ dispatch:
   enabled: true
   coordinator: zakarya
 
+# Team broadcast: a human message carrying any of these aliases (e.g. "@team") is
+# treated as a mention of EVERY persona in that channel, so the whole team replies
+# — each for their own area. Literal text, no Slack user-group setup needed. Only
+# humans can trigger it (bots can't, so there's no fan-out loop). Default-on; omit
+# this block to keep the defaults, set enabled: false to turn it off.
+broadcast:
+  enabled: true
+  aliases: [team, all, crew, everyone, channel, here]
+
 # Phase 3: a project's user-feedback feed -> a persona to triage.
 # Portable: point `source` at any SQLite DB (with a query) or HTTP JSON endpoint.
 # Enable once the triage persona (here Eva) is running.

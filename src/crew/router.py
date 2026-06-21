@@ -44,6 +44,7 @@ class IncomingMessage:
     ts: Optional[str] = None  # the triggering message's timestamp (for reactions)
     from_agent: bool = False  # sender is a teammate bot (for the loop-guard)
     dispatch: bool = False  # unaddressed channel question routed to the coordinator
+    broadcast: bool = False  # addressed to the whole team (@team) — everyone replies
 
 
 class Router:
@@ -153,6 +154,17 @@ class Router:
                             )
                     except Exception:
                         log.debug("thread fetch failed for %s — using minimal context", name)
+
+                if msg.broadcast:
+                    # Whole team was addressed (@team); every persona is replying in
+                    # parallel. Keep each reply scoped so we don't get four near-identical
+                    # answers — and stay silent if it's genuinely not your area.
+                    context += (
+                        "\n\n[This was sent to the WHOLE TEAM (@team) — every teammate is "
+                        "replying at once. Answer only for YOUR area of ownership and keep it "
+                        "short; don't repeat what another teammate would obviously cover. If it "
+                        "truly isn't your area, a one-liner deferring to the right person is fine.]"
+                    )
 
                 reply = await session.ask(msg.text, context=context, on_update=on_update)
 
