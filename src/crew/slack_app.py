@@ -46,6 +46,26 @@ def _strip_broadcast(text: str, aliases) -> str:
     return text.strip()
 
 
+def sole_bot_in_thread(messages: list, my_bot_user_id: str) -> bool:
+    """True if the ONLY bot that has posted in this thread is me.
+
+    Lets a persona answer an untagged follow-up in a thread it already owns
+    (`messages` = conversations_replies' messages; a bot message carries `bot_id`
+    and its `user` is the bot's user id). Conservative: returns False if another
+    bot posted, if I never posted, or if any bot message can't be attributed to a
+    user id (ambiguous → require an explicit @mention rather than guess)."""
+    if not my_bot_user_id:
+        return False
+    bot_users = set()
+    for m in messages:
+        if m.get("bot_id"):
+            uid = m.get("user")
+            if not uid:
+                return False  # unattributable bot message → don't guess
+            bot_users.add(uid)
+    return bot_users == {my_bot_user_id}
+
+
 def to_slack_mrkdwn(text: str) -> str:
     """Convert standard Markdown (what the model writes) to Slack mrkdwn.
 
@@ -138,10 +158,13 @@ def event_to_incoming(
             text = _strip_broadcast(text, broadcast_aliases) or text
     elif is_dm and not from_agent:
         thread = None  # human DM
-    elif is_coordinator and not from_agent:
-        # Unaddressed human question in a channel → the coordinator triages it,
-        # threaded under the question.
-        thread = event.get("thread_ts") or event.get("ts")
+    elif is_coordinator and not from_agent and not event.get("thread_ts"):
+        # Unaddressed *new* human question in a channel → the coordinator triages it,
+        # threaded under the question. Replies *inside* an existing thread are NOT
+        # dispatched here — they're routed by thread participation (see
+        # SlackConnector._maybe_thread_followup), so the bot already in the thread
+        # answers without needing a tag.
+        thread = event.get("ts")
         dispatch = True
     else:
         return None  # channel chatter / bot messages we weren't addressed in
@@ -194,6 +217,9 @@ class SlackConnector:
                 event, name, is_mention=is_mention, is_coordinator=self.is_coordinator,
                 broadcast_aliases=self.broadcast_aliases,
             )
+            # Untagged reply in a thread I'm the only bot in → answer without a tag.
+            if msg is None and not is_mention:
+                msg = await self._maybe_thread_followup(event)
             if msg is not None:
                 await self.on_message(msg)
 
@@ -222,6 +248,34 @@ class SlackConnector:
         # (mention map, feedback, webhook) would never run. The process is kept
         # alive by run_forever()'s Event().wait().
         await self._handler.connect_async()
+
+    async def _maybe_thread_followup(self, event: dict):  # pragma: no cover - needs live socket
+        """Route an untagged human reply in a thread I solely own, so I answer
+        without a tag. Returns an IncomingMessage or None. Skips DMs, top-level
+        (non-thread) messages, bots, and threads where I'm not the only bot."""
+        if event.get("subtype") or event.get("bot_id"):
+            return None
+        channel = event.get("channel", "")
+        is_dm = event.get("channel_type") == "im" or channel.startswith("D")
+        thread_ts = event.get("thread_ts")
+        if is_dm or not thread_ts or not self.bot_user_id:
+            return None
+        text = _MENTION.sub("", event.get("text", "")).strip()
+        if not text:
+            return None
+        try:
+            resp = await self._app.client.conversations_replies(
+                channel=channel, ts=thread_ts, limit=200
+            )
+            messages = resp.get("messages", [])
+        except Exception:
+            return None
+        if not sole_bot_in_thread(messages, self.bot_user_id):
+            return None
+        return IncomingMessage(
+            persona=self.cfg.name, channel=channel, thread=thread_ts, text=text,
+            sender=event.get("user", "unknown"), ts=event.get("ts"), from_agent=False,
+        )
 
     async def fetch_thread(self, channel: str, thread_ts: str, limit: int = 200) -> list:  # pragma: no cover
         """Return the thread's messages as 'speaker: text' lines (best-effort)."""
