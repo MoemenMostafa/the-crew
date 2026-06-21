@@ -23,6 +23,7 @@ class FakeConnector:
         self.broadcast_aliases = tuple(broadcast_aliases)
         self.started = False
         self.posts = []
+        self.uploads = []  # (paths, comment)
 
     async def start(self):
         self.started = True
@@ -32,6 +33,10 @@ class FakeConnector:
 
     async def post(self, channel, thread, text):
         self.posts.append(text)
+
+    async def upload_files(self, channel, thread, paths, comment=""):
+        self.uploads.append((list(paths), comment))
+        return True
 
     async def react(self, channel, ts, emoji, add):
         pass
@@ -156,6 +161,36 @@ def test_crew_reload_applies_edited_personality(tmp_path):
         assert "New voice." in sp
         assert "Original voice." not in sp
         assert any("Reloaded" in p for p in conn.posts)
+        await crew.stop()
+
+    asyncio.run(run())
+
+
+def test_post_uploads_referenced_screenshot(tmp_path):
+    async def run():
+        crew = Crew(make_config(tmp_path), session_factory=FakeSession, connector_factory=FakeConnector)
+        await crew.start()
+        conn = crew.connectors["adam"]
+        shot = tmp_path / "heute.png"
+        shot.write_bytes(b"\x89PNG\r\n")  # a real file on disk
+
+        await crew._post("adam", "#adam-dev", "1.1", f"Shipped it:\n![Heute]({shot})")
+        assert conn.uploads == [([str(shot)], "Shipped it:")]
+        assert conn.posts == []  # text rode along as the upload comment, not a separate post
+        await crew.stop()
+
+    asyncio.run(run())
+
+
+def test_post_falls_back_to_text_when_screenshot_missing(tmp_path):
+    async def run():
+        crew = Crew(make_config(tmp_path), session_factory=FakeSession, connector_factory=FakeConnector)
+        await crew.start()
+        conn = crew.connectors["adam"]
+
+        await crew._post("adam", "#adam-dev", "1.1", "Done ![x](/nope/missing.png)")
+        assert conn.uploads == []          # nothing to upload
+        assert conn.posts == ["Done"]      # text still delivered (reference stripped)
         await crew.stop()
 
     asyncio.run(run())

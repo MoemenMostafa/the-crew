@@ -65,6 +65,21 @@ Mention teammates by name only (e.g. @Adam) — never paste a raw Slack ID like
 the thread."""
 
 
+# Visual work should be shown, not just described.
+_SCREENSHOTS = """## Show your visual work
+When a change is visual — a new screen, a UI tweak, a UX flow — show it, don't
+just describe it. Capture a screenshot (you have a headless browser — drive the
+running app and screenshot the relevant view) to a file, then reference that file
+in your reply so it gets attached to the thread:
+
+    ![Heute screen after the change](/absolute/path/to/shot.png)
+
+The local image path is uploaded into the Slack thread automatically (and the
+reference is stripped from your text). Use an absolute path to a real PNG/JPG you
+just wrote. Do this for any UI/UX change a person would want to see before/after —
+one or two focused shots beat a wall of words."""
+
+
 def _guardrail_summary(g: Guardrails, workdir: str) -> str:
     lines = [
         "## Operating rules (enforced by the harness, not optional)",
@@ -133,6 +148,8 @@ class Persona:
             self._expertise or "(expertise not yet defined)",
             "",
             _COLLABORATION,
+            "",
+            _SCREENSHOTS,
             "",
             _guardrail_summary(c.guardrails, c.workdir),
         ]

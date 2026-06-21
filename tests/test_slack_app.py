@@ -3,6 +3,7 @@ import pytest
 from crew.config import Guardrails, PersonaConfig
 from crew.slack_app import (
     event_to_incoming,
+    extract_image_paths,
     resolve_tokens,
     rewrite_mentions,
     sole_bot_in_thread,
@@ -191,6 +192,34 @@ def test_sole_bot_false_on_unattributable_bot_message():
 
 def test_sole_bot_false_without_my_id():
     assert sole_bot_in_thread([{"bot_id": "B", "user": "U"}], "") is False
+
+
+# --- screenshot attachments ----------------------------------------------------
+
+def test_extract_image_markdown_local_path():
+    clean, paths = extract_image_paths("Shipped it:\n![Heute after](/tmp/shots/heute.png)\nLooks good.")
+    assert paths == ["/tmp/shots/heute.png"]
+    assert "![" not in clean
+    assert "Shipped it:" in clean and "Looks good." in clean
+
+
+def test_extract_image_marker_form():
+    clean, paths = extract_image_paths("Done [[screenshot: /tmp/a.jpg]] and [[image: /tmp/b.webp]]")
+    assert paths == ["/tmp/a.jpg", "/tmp/b.webp"]
+    assert "screenshot:" not in clean
+
+
+def test_extract_ignores_remote_and_non_images():
+    text = "see ![logo](https://x.test/l.png) and [docs](/local/readme.md)"
+    clean, paths = extract_image_paths(text)
+    assert paths == []                 # http image + non-image link untouched
+    assert clean == text
+
+
+def test_extract_no_images_returns_text_unchanged():
+    clean, paths = extract_image_paths("just a normal reply")
+    assert paths == []
+    assert clean == "just a normal reply"
 
 
 def test_ignores_subtype_events():

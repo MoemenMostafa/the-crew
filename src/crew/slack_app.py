@@ -46,6 +46,35 @@ def _strip_broadcast(text: str, aliases) -> str:
     return text.strip()
 
 
+_IMG_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp")
+# A local image reference the agent can drop in a reply to attach a screenshot:
+#   markdown image with a local path  ![caption](/abs/shot.png)   (http(s) skipped)
+#   or an explicit marker             [[screenshot: /abs/shot.png]]
+_MD_LOCAL_IMG = re.compile(r"!\[[^\]]*\]\(\s*(?!https?://)([^)\s]+)\s*\)")
+_IMG_MARKER = re.compile(r"\[\[(?:screenshot|image)\s*:\s*([^\]]+?)\s*\]\]", re.IGNORECASE)
+
+
+def extract_image_paths(text: str) -> tuple[str, list[str]]:
+    """Pull local image paths out of a reply so they can be uploaded as files.
+
+    Returns (clean_text, paths). Only local image paths (by extension) are taken;
+    http(s) images and non-image links are left in the text untouched."""
+    paths: list[str] = []
+
+    def take(m):
+        p = m.group(1).strip().strip("\"'")
+        if p.lower().endswith(_IMG_EXT):
+            paths.append(p)
+            return ""  # strip the reference from the text
+        return m.group(0)  # not an image → leave it
+
+    text = _MD_LOCAL_IMG.sub(take, text)
+    text = _IMG_MARKER.sub(take, text)
+    clean = re.sub(r"[ \t]+\n", "\n", text)
+    clean = re.sub(r"\n{3,}", "\n\n", clean).strip()
+    return clean, paths
+
+
 def sole_bot_in_thread(messages: list, my_bot_user_id: str) -> bool:
     """True if the ONLY bot that has posted in this thread is me.
 
@@ -302,6 +331,24 @@ class SlackConnector:
         await self._app.client.chat_postMessage(
             channel=channel, thread_ts=thread, text=text, link_names=True
         )
+
+    async def upload_files(
+        self, channel: str, thread: Optional[str], paths: list, comment: str = ""
+    ) -> bool:  # pragma: no cover - needs live socket + files:write
+        """Upload local image files into the thread (screenshots from tests). The
+        cleaned reply text rides along as the first file's comment. Returns True if
+        at least one file went up. Requires the bot to have the `files:write` scope."""
+        if self._app is None:
+            self._build()
+        sent = False
+        for p in paths:
+            await self._app.client.files_upload_v2(
+                channel=channel, thread_ts=thread, file=p,
+                title=os.path.basename(p),
+                initial_comment=(comment or None) if not sent else None,
+            )
+            sent = True
+        return sent
 
     async def react(self, channel: str, ts: str, emoji: str, add: bool) -> None:  # pragma: no cover
         """Add/remove a reaction as a working/done indicator. Best-effort: callers
