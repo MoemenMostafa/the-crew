@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Optional
 
 log = logging.getLogger("crew.router")
@@ -45,6 +45,8 @@ class IncomingMessage:
     from_agent: bool = False  # sender is a teammate bot (for the loop-guard)
     dispatch: bool = False  # unaddressed channel question routed to the coordinator
     broadcast: bool = False  # addressed to the whole team (@team) — everyone replies
+    files: list = field(default_factory=list)  # raw Slack file objects on the message
+    file_paths: list = field(default_factory=list)  # local paths after download (set by the connector)
 
 
 class Router:
@@ -163,6 +165,16 @@ class Router:
                             )
                     except Exception:
                         log.debug("thread fetch failed for %s — using minimal context", name)
+
+                if msg.file_paths:
+                    # The user attached file(s); they've been downloaded locally so
+                    # the agent can open them. Read renders images visually.
+                    listed = "\n".join(f"- {p}" for p in msg.file_paths)
+                    context += (
+                        "\n\n[The user attached the following file(s). They've been saved "
+                        "locally — use the Read tool to view them (images render visually, "
+                        f"PDFs/text are read as content):\n{listed}]"
+                    )
 
                 if msg.broadcast:
                     # Whole team was addressed (@team); every persona is replying in

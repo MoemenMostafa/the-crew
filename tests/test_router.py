@@ -237,6 +237,37 @@ def test_transcript_not_refetched_once_session_exists(tmp_path):
     assert fetched == []  # transcript fetch skipped
 
 
+def test_attachment_paths_surfaced_in_context(tmp_path):
+    class CtxSession:
+        def __init__(self):
+            self.contexts = []
+
+        def has_session(self, conversation):
+            return True  # existing session → no transcript; still must surface files
+
+        async def ask(self, text, context="", on_update=None, channel=None, conversation=None, dispatch=False, broadcast=False):
+            self.contexts.append(context)
+            return "ok"
+
+    async def run():
+        sess = CtxSession()
+
+        async def post(persona, channel, thread, text):
+            pass
+
+        router = Router({"adam": sess}, post)
+        msg = IncomingMessage("adam", "#adam-dev", "9.9", "look at this", "u", ts="9.9")
+        msg.file_paths = ["/tmp/crew-attachments/F1_shot.png"]
+        await router.handle(msg)
+        await router.join()
+        await router.stop()
+        return sess.contexts
+
+    contexts = asyncio.run(run())
+    assert "/tmp/crew-attachments/F1_shot.png" in contexts[0]
+    assert "Read tool" in contexts[0]
+
+
 def test_humanize_ids_replaces_raw_mentions():
     from crew.router import humanize_ids
     names = {"U0BBVG428US": "Zakarya"}
