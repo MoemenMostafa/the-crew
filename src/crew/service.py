@@ -18,7 +18,7 @@ from .feedback import FeedbackItem, FeedbackPoller, build_feedback_source
 from .memory import Memory
 from .persona import Persona
 from .router import IncomingMessage, Router
-from .slack_app import SlackConnector, rewrite_mentions, to_slack_mrkdwn
+from .slack_app import SlackConnector, extract_image_paths, rewrite_mentions, to_slack_mrkdwn
 from .state import SessionStore
 from .webhook import WebhookServer
 
@@ -145,7 +145,20 @@ class Crew:
     async def _post(self, persona: str, channel: str, thread: Optional[str], text: str) -> None:
         text = to_slack_mrkdwn(text)  # **bold**/##/links -> Slack's mrkdwn
         text = rewrite_mentions(text, self.mention_map)  # @Sara -> <@BOT_ID> so handoffs ping
-        await self.connectors[persona].post(channel, thread, text)
+        # Screenshots: a reply may reference local image files (UI/UX changes) —
+        # upload them into the thread with the text as the comment. Fall back to a
+        # plain post if the referenced files don't exist (text is never lost).
+        clean, images = extract_image_paths(text)
+        existing = [p for p in images if os.path.isfile(p)]
+        if existing:
+            try:
+                await self.connectors[persona].upload_files(channel, thread, existing, comment=clean)
+                return
+            except Exception:
+                log.warning("file upload failed for %s (missing files:write scope?) — posting text", persona)
+                await self.connectors[persona].post(channel, thread, clean or text)
+                return
+        await self.connectors[persona].post(channel, thread, clean or text)
 
     async def _react(self, persona: str, channel: str, ts: str, emoji: str, add: bool) -> None:
         await self.connectors[persona].react(channel, ts, emoji, add)

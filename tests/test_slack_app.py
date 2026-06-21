@@ -3,6 +3,7 @@ import pytest
 from crew.config import Guardrails, PersonaConfig
 from crew.slack_app import (
     event_to_incoming,
+    extract_image_paths,
     resolve_tokens,
     rewrite_mentions,
     sole_bot_in_thread,
@@ -256,3 +257,28 @@ def test_to_slack_mrkdwn_converts_table_to_code_block():
 
 def test_to_slack_mrkdwn_leaves_non_tables_alone():
     assert to_slack_mrkdwn("just a | pipe in text") == "just a | pipe in text"
+
+
+def test_extract_image_markdown_local_path():
+    clean, paths = extract_image_paths("Shipped:\n![Heute](/tmp/shots/heute.png)\nLooks good.")
+    assert paths == ["/tmp/shots/heute.png"]
+    assert "![" not in clean and "Shipped:" in clean and "Looks good." in clean
+
+
+def test_extract_image_marker_and_ignores_remote():
+    clean, paths = extract_image_paths("a [[screenshot: /tmp/a.jpg]] b ![x](https://h/y.png)")
+    assert paths == ["/tmp/a.jpg"]        # local marker taken, remote left
+    assert "https://h/y.png" in clean
+
+
+def test_file_share_message_is_kept():
+    # A user attaching a file (subtype file_share) with a caption + mention is a real turn.
+    event = {"channel": "C1", "channel_type": "channel", "ts": "1.1", "user": "U1",
+             "subtype": "file_share", "text": "<@U> look at this"}
+    msg = event_to_incoming(event, "adam", is_mention=True)
+    assert msg is not None and msg.text == "look at this"
+
+
+def test_other_subtypes_still_dropped():
+    event = {"channel": "C1", "ts": "1", "subtype": "message_changed", "text": "x"}
+    assert event_to_incoming(event, "adam", is_mention=True) is None

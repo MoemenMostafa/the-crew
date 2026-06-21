@@ -23,6 +23,7 @@ class FakeConnector:
         self.broadcast_aliases = tuple(broadcast_aliases)
         self.started = False
         self.posts = []
+        self.uploads = []  # (paths, comment)
 
     async def start(self):
         self.started = True
@@ -32,6 +33,10 @@ class FakeConnector:
 
     async def post(self, channel, thread, text):
         self.posts.append(text)
+
+    async def upload_files(self, channel, thread, paths, comment=""):
+        self.uploads.append((list(paths), comment))
+        return True
 
     async def react(self, channel, ts, emoji, add):
         pass
