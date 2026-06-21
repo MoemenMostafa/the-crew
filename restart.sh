@@ -5,9 +5,9 @@
 # so a restart triggered from *inside* a persona session would kill itself before
 # it could relaunch. Running this under setsid (see the recommended invocation)
 # detaches it from that process tree so it survives the kill and brings the crew
-# back up.
+# back up. macOS has no `setsid`, so use nohup (which ignores the SIGHUP) + `&`:
 #
-#   setsid nohup ./restart.sh >> .logs/crew.out 2>&1 < /dev/null &
+#   nohup ./restart.sh >> .logs/crew.out 2>&1 < /dev/null &
 #
 # Logs go to .logs/crew.out. crew.yaml + persona prompts load at boot, so this is
 # how new code/config takes effect.
