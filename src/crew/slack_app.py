@@ -66,12 +66,56 @@ def sole_bot_in_thread(messages: list, my_bot_user_id: str) -> bool:
     return bot_users == {my_bot_user_id}
 
 
+def _tables_to_code_blocks(text: str) -> str:
+    """Slack has no Markdown tables — they render as raw `| a | b |` lines. Convert
+    each table to an aligned monospace code block (which Slack does render)."""
+    lines = text.split("\n")
+
+    def is_row(s: str) -> bool:
+        s = s.strip()
+        return s.startswith("|") and s.endswith("|") and len(s) > 1
+
+    def is_sep(s: str) -> bool:
+        cells = [c.strip() for c in s.strip().strip("|").split("|")]
+        return bool(cells) and all(re.fullmatch(r":?-{1,}:?", c) for c in cells)
+
+    def cells_of(s: str) -> list:
+        return [c.strip() for c in s.strip().strip("|").split("|")]
+
+    out: list = []
+    i = 0
+    while i < len(lines):
+        # A table = a header row immediately followed by a `---` separator row.
+        if i + 1 < len(lines) and is_row(lines[i]) and is_sep(lines[i + 1]):
+            rows = [cells_of(lines[i])]
+            j = i + 2
+            while j < len(lines) and is_row(lines[j]):
+                rows.append(cells_of(lines[j]))
+                j += 1
+            ncol = max(len(r) for r in rows)
+            for r in rows:
+                r += [""] * (ncol - len(r))
+            widths = [max(len(r[c]) for r in rows) for c in range(ncol)]
+            out.append("```")
+            for r in rows:
+                out.append(" | ".join(r[c].ljust(widths[c]) for c in range(ncol)).rstrip())
+            out.append("```")
+            i = j
+        else:
+            out.append(lines[i])
+            i += 1
+    return "\n".join(out)
+
+
 def to_slack_mrkdwn(text: str) -> str:
     """Convert standard Markdown (what the model writes) to Slack mrkdwn.
 
     Slack uses *bold* (not **bold**), _italic_, ~strike~ (not ~~), no #-headings,
-    and <url|label> links. Without this, replies show literal '**', '##', etc.
+    <url|label> links, and has no tables. Without this, replies show literal
+    '**', '##', '| a | b |', etc.
     """
+    # Tables first → monospace code block (Slack can't render Markdown tables).
+    text = _tables_to_code_blocks(text)
     # Links [label](url) -> <url|label>  (do first, before * handling)
     text = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r"<\2|\1>", text)
     # Headings: leading #..###### -> bold line

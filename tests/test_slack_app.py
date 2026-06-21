@@ -241,3 +241,18 @@ def test_to_slack_mrkdwn_converts_markdown():
     assert to_slack_mrkdwn("see [docs](https://x.test/y)") == "see <https://x.test/y|docs>"
     # already-Slack single-asterisk bold is left alone
     assert to_slack_mrkdwn("*keep*") == "*keep*"
+
+
+def test_to_slack_mrkdwn_converts_table_to_code_block():
+    md = "Results:\n| Name | Role |\n| --- | --- |\n| Adam | Dev |\n| Eva | Support |\nDone."
+    out = to_slack_mrkdwn(md)
+    assert "```" in out                      # wrapped in a monospace block
+    assert "---" not in out                   # separator row dropped
+    assert "Adam | Dev" in out                # aligned row rendered
+    assert "Name | Role" in out
+    assert out.startswith("Results:")         # surrounding text preserved
+    assert out.rstrip().endswith("Done.")
+
+
+def test_to_slack_mrkdwn_leaves_non_tables_alone():
+    assert to_slack_mrkdwn("just a | pipe in text") == "just a | pipe in text"
