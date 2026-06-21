@@ -16,10 +16,11 @@ class FakeSession:
 
 
 class FakeConnector:
-    def __init__(self, cfg, on_message, is_coordinator=False):
+    def __init__(self, cfg, on_message, is_coordinator=False, broadcast_aliases=()):
         self.cfg = cfg
         self.on_message = on_message
         self.is_coordinator = is_coordinator
+        self.broadcast_aliases = tuple(broadcast_aliases)
         self.started = False
         self.posts = []
 

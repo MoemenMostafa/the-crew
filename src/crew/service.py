@@ -65,9 +65,12 @@ class Crew:
 
         dp = config.dispatch
         coordinator = dp.coordinator if (dp and dp.enabled) else None
+        bc = config.broadcast
+        broadcast_aliases = tuple(bc.aliases) if (bc and bc.enabled) else ()
         for cfg in config.personas:
             self.connectors[cfg.name] = connector_factory(
-                cfg, self._on_message, is_coordinator=(cfg.name == coordinator)
+                cfg, self._on_message, is_coordinator=(cfg.name == coordinator),
+                broadcast_aliases=broadcast_aliases,
             )
 
         # Feedback feed → Eva (Phase 3). Only set up if enabled and its persona

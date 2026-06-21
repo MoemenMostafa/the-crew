@@ -18,6 +18,34 @@ _MENTION = re.compile(r"<@[A-Z0-9]+>")
 _AT = re.compile(r"@([A-Za-z][A-Za-z0-9._-]*)")
 
 
+def _broadcast_hit(raw: str, aliases) -> bool:
+    """True if a human message addresses the whole team via any alias.
+
+    Matches three forms Slack produces for `@team`-style text:
+      * literal `@team` typed in the message,
+      * Slack's special broadcasts `<!everyone>` / `<!channel>` / `<!here>`,
+      * a user-group mention whose label is an alias: `<!subteam^ID|team>`.
+    """
+    if not aliases:
+        return False
+    low = raw.lower()
+    for a in aliases:
+        if re.search(rf"(?<![\w/])@{re.escape(a)}\b", low):
+            return True
+        if f"<!{a}>" in low or f"|{a}>" in low:
+            return True
+    return False
+
+
+def _strip_broadcast(text: str, aliases) -> str:
+    """Remove broadcast tokens so the agent doesn't see or parrot `@team`."""
+    for a in aliases:
+        text = re.sub(rf"(?<![\w/])@{re.escape(a)}\b", "", text, flags=re.IGNORECASE)
+        text = re.sub(rf"<!{re.escape(a)}>", "", text, flags=re.IGNORECASE)
+        text = re.sub(rf"<!subteam\^[A-Z0-9]+\|{re.escape(a)}>", "", text, flags=re.IGNORECASE)
+    return text.strip()
+
+
 def to_slack_mrkdwn(text: str) -> str:
     """Convert standard Markdown (what the model writes) to Slack mrkdwn.
 
@@ -66,13 +94,21 @@ def resolve_tokens(cfg: PersonaConfig) -> tuple[str, str]:
 
 
 def event_to_incoming(
-    event: dict, persona_name: str, is_mention: bool = False, is_coordinator: bool = False
+    event: dict,
+    persona_name: str,
+    is_mention: bool = False,
+    is_coordinator: bool = False,
+    broadcast_aliases=(),
 ) -> Optional[IncomingMessage]:
     """Translate a Slack event into a turn, or None to ignore it.
 
     Routing policy:
       * ``app_mention`` (``is_mention=True``) → always handled — this persona was
         explicitly addressed, by a human or a teammate bot (that's how handoffs work).
+      * a human channel message addressing the whole team (`@team`, see
+        ``broadcast_aliases``) → handled by EVERY persona, threaded under the message,
+        so the team responds together (flagged ``broadcast`` so each answers for its
+        own area). Bots can't trigger a broadcast (no fan-out loops).
       * plain message in a DM → handled (human 1:1).
       * plain message in a channel → ignored, *unless* this persona is the
         coordinator (``is_coordinator``), in which case unaddressed human questions
@@ -81,7 +117,8 @@ def event_to_incoming(
     if event.get("subtype"):  # edits, joins, channel_topic, bot_message, etc.
         return None
 
-    text = _MENTION.sub("", event.get("text", "")).strip()
+    raw = event.get("text", "")
+    text = _MENTION.sub("", raw).strip()
     if not text:
         return None
 
@@ -89,10 +126,16 @@ def event_to_incoming(
     is_dm = event.get("channel_type") == "im" or channel.startswith("D")
     from_agent = bool(event.get("bot_id"))
     dispatch = False
+    # A team broadcast only makes sense from a human in a channel (a DM is 1:1).
+    broadcast = (
+        not from_agent and not is_dm and _broadcast_hit(raw, broadcast_aliases)
+    )
 
-    if is_mention:
+    if is_mention or broadcast:
         # Reply at root in a DM; in a channel, thread under the message.
         thread = None if is_dm else (event.get("thread_ts") or event.get("ts"))
+        if broadcast:
+            text = _strip_broadcast(text, broadcast_aliases) or text
     elif is_dm and not from_agent:
         thread = None  # human DM
     elif is_coordinator and not from_agent:
@@ -112,6 +155,7 @@ def event_to_incoming(
         ts=event.get("ts"),
         from_agent=from_agent,
         dispatch=dispatch,
+        broadcast=broadcast,
     )
 
 
@@ -122,10 +166,17 @@ class SlackConnector:
     """Wires one persona's Slack app to the router. Built lazily so importing this
     module (and unit-testing the pure helpers) never requires live tokens."""
 
-    def __init__(self, cfg: PersonaConfig, on_message: OnMessage, is_coordinator: bool = False):
+    def __init__(
+        self,
+        cfg: PersonaConfig,
+        on_message: OnMessage,
+        is_coordinator: bool = False,
+        broadcast_aliases=(),
+    ):
         self.cfg = cfg
         self.on_message = on_message
         self.is_coordinator = is_coordinator
+        self.broadcast_aliases = tuple(broadcast_aliases)
         self.bot_user_id = None  # resolved at start(); used for mention rewriting
         self._app = None
         self._handler = None
@@ -140,7 +191,8 @@ class SlackConnector:
 
         async def _route(event, is_mention):
             msg = event_to_incoming(
-                event, name, is_mention=is_mention, is_coordinator=self.is_coordinator
+                event, name, is_mention=is_mention, is_coordinator=self.is_coordinator,
+                broadcast_aliases=self.broadcast_aliases,
             )
             if msg is not None:
                 await self.on_message(msg)
@@ -171,7 +223,7 @@ class SlackConnector:
         # alive by run_forever()'s Event().wait().
         await self._handler.connect_async()
 
-    async def fetch_thread(self, channel: str, thread_ts: str, limit: int = 50) -> list:  # pragma: no cover
+    async def fetch_thread(self, channel: str, thread_ts: str, limit: int = 200) -> list:  # pragma: no cover
         """Return the thread's messages as 'speaker: text' lines (best-effort)."""
         if self._app is None:
             self._build()

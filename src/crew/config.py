@@ -77,6 +77,17 @@ class DispatchConfig:
 
 
 @dataclass
+class BroadcastConfig:
+    """`@team`-style broadcast: a human message carrying any alias is treated as a
+    mention of EVERY persona in the channel, so the whole team responds (each for
+    their own area). Literal text — no Slack user-group setup required."""
+    enabled: bool = True
+    aliases: list[str] = field(
+        default_factory=lambda: ["team", "all", "crew", "everyone", "channel", "here"]
+    )
+
+
+@dataclass
 class CrewConfig:
     personas: list[PersonaConfig]
     audit_log: Path
@@ -85,6 +96,7 @@ class CrewConfig:
     feedback: "FeedbackConfig | None" = None
     webhook: "WebhookConfig | None" = None
     dispatch: "DispatchConfig | None" = None
+    broadcast: "BroadcastConfig" = field(default_factory=BroadcastConfig)
 
 
 def _merge(defaults: dict, override: dict, key, fallback=None):
@@ -170,6 +182,17 @@ def load_config(path: str | Path) -> CrewConfig:
             coordinator=str(dp.get("coordinator", "")),
         )
 
+    # Broadcast (`@team`): default-on with the standard aliases so it works out of
+    # the box; a `broadcast:` block in crew.yaml can disable it or override aliases.
+    bc = raw.get("broadcast")
+    if bc is None:
+        broadcast = BroadcastConfig()
+    else:
+        broadcast = BroadcastConfig(
+            enabled=bool(bc.get("enabled", True)),
+            aliases=[str(a).lstrip("@").lower() for a in (bc.get("aliases") or BroadcastConfig().aliases)],
+        )
+
     return CrewConfig(
         personas=personas,
         audit_log=audit_log,
@@ -178,4 +201,5 @@ def load_config(path: str | Path) -> CrewConfig:
         feedback=feedback,
         webhook=webhook,
         dispatch=dispatch,
+        broadcast=broadcast,
     )

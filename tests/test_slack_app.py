@@ -99,6 +99,60 @@ def test_non_coordinator_still_ignores_unaddressed_channel_question():
     assert event_to_incoming(event, "adam", is_mention=False, is_coordinator=False) is None
 
 
+_ALIASES = ("team", "all", "crew", "everyone", "channel", "here")
+
+
+def test_broadcast_from_human_in_channel_is_handled_by_every_persona():
+    # "@team ..." from a human → each persona handles it, flagged broadcast, threaded.
+    event = {"channel": "C-crew", "channel_type": "channel", "ts": "7.7", "user": "U1",
+             "text": "@team standup in 5?"}
+    msg = event_to_incoming(event, "adam", is_mention=False, broadcast_aliases=_ALIASES)
+    assert msg is not None
+    assert msg.broadcast is True
+    assert msg.dispatch is False
+    assert msg.thread == "7.7"          # threaded under the broadcast
+    assert msg.text == "standup in 5?"  # the @team token is stripped
+
+
+def test_broadcast_slack_special_channel_token():
+    # Slack renders @channel as <!channel> — also a broadcast.
+    event = {"channel": "C1", "channel_type": "channel", "ts": "1.1", "user": "U1",
+             "text": "<!channel> ship it today"}
+    msg = event_to_incoming(event, "sara", is_mention=False, broadcast_aliases=_ALIASES)
+    assert msg is not None and msg.broadcast is True
+
+
+def test_broadcast_ignored_from_a_bot():
+    # A teammate bot writing "@team" must NOT fan out (no broadcast loops).
+    event = {"channel": "C-crew", "ts": "1.1", "bot_id": "B-eva", "text": "@team done"}
+    assert event_to_incoming(event, "adam", is_mention=False, broadcast_aliases=_ALIASES) is None
+
+
+def test_broadcast_takes_precedence_over_coordinator_dispatch():
+    # The coordinator broadcasts as itself rather than triaging the @team message.
+    event = {"channel": "C-crew", "channel_type": "channel", "ts": "2.2", "user": "U1",
+             "text": "@team what's the plan?"}
+    msg = event_to_incoming(event, "zakarya", is_mention=False, is_coordinator=True,
+                            broadcast_aliases=_ALIASES)
+    assert msg.broadcast is True
+    assert msg.dispatch is False
+
+
+def test_broadcast_in_dm_is_just_a_normal_dm():
+    # A DM is 1:1 — "@team" there isn't a fan-out.
+    event = {"channel": "D1", "channel_type": "im", "ts": "1.1", "user": "U1", "text": "@team hi"}
+    msg = event_to_incoming(event, "adam", is_mention=False, broadcast_aliases=_ALIASES)
+    assert msg is not None
+    assert msg.broadcast is False
+    assert msg.thread is None
+
+
+def test_no_aliases_means_no_broadcast():
+    # With broadcast disabled (no aliases), "@team" is just ignored channel chatter.
+    event = {"channel": "C1", "channel_type": "channel", "ts": "1", "user": "U1", "text": "@team hey"}
+    assert event_to_incoming(event, "adam", is_mention=False, broadcast_aliases=()) is None
+
+
 def test_ignores_subtype_events():
     assert (
         event_to_incoming({"channel": "C1", "ts": "1", "subtype": "message_changed", "text": "x"}, "adam")
