@@ -24,7 +24,10 @@ dispatch:
 # this block to keep the defaults, set enabled: false to turn it off.
 broadcast:
   enabled: true
-  aliases: [team, all, crew, everyone, channel, here]
+  # Each broadcast fans out to EVERY persona in the channel (one full agent turn
+  # each), so keep the aliases unambiguous. Avoid common words like "here", "all",
+  # or "channel" that fire by accident. Add more only if they're unlikely in normal chat.
+  aliases: [team, everyone]
 
 # Phase 3: a project's user-feedback feed -> a persona to triage.
 # Portable: point `source` at any SQLite DB (with a query) or HTTP JSON endpoint.
@@ -84,6 +87,14 @@ defaults:
   protected_branches: [main, master]
   block_destructive: true      # block rm -rf, force-push to protected, prod deploy
   require_branch: true         # never commit directly to a protected branch
+  # Hard ceiling on agentic loop turns per message — caps a runaway task (e.g. an
+  # endless tool-call loop) from burning tokens unbounded. null = no limit.
+  max_turns: 40
+  # `model` is the capable default used for real work. `model_light` is a cheaper
+  # model the crew auto-selects for low-stakes turns (coordinator triage, team
+  # broadcasts, short questions). Set model_light: null on a persona to always use
+  # the heavy model. The router biases toward heavy when a message looks like work.
+  model_light: claude-sonnet-4-6
   workdir: /Users/m.mostafa/Workspace/code/plauda   # the Loquina repo (shared context)
   model: claude-opus-4-8
   allowed_tools:
@@ -101,6 +112,7 @@ personas:
     role: Senior Developer
     workdir: /Users/m.mostafa/Workspace/code/plauda   # the real Loquina repo
     model: claude-opus-4-8
+    model_light: null      # Adam does real engineering even when triaging — keep him on Opus
     channels: ["#adam-dev", "#crew-team"]
     bot_token_env: ADAM_SLACK_BOT_TOKEN
     app_token_env: ADAM_SLACK_APP_TOKEN

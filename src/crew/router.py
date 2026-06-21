@@ -141,8 +141,17 @@ class Router:
                     await self.post(_name, _msg.channel, _msg.thread, text)
 
                 sender = self.names.get(msg.sender) or self.operator
+                # One resumable session per thread (or DM/channel). When the persona
+                # already has a session for this conversation, its own history carries
+                # the context — so only pull (and pay for) the full Slack transcript
+                # the first time we're brought into a thread.
+                conversation = msg.thread or msg.channel
                 context = f"[Slack {msg.channel} — message from {sender}]"
-                if msg.thread and self.fetch_thread is not None:
+                if (
+                    msg.thread
+                    and self.fetch_thread is not None
+                    and not session.has_session(conversation)
+                ):
                     try:
                         lines = await self.fetch_thread(name, msg.channel, msg.thread)
                         if lines:
@@ -166,7 +175,15 @@ class Router:
                         "truly isn't your area, a one-liner deferring to the right person is fine.]"
                     )
 
-                reply = await session.ask(msg.text, context=context, on_update=on_update)
+                reply = await session.ask(
+                    msg.text,
+                    context=context,
+                    on_update=on_update,
+                    channel=msg.channel,
+                    conversation=conversation,
+                    dispatch=msg.dispatch,
+                    broadcast=msg.broadcast,
+                )
 
                 # If the agent produced nothing along the way, post the final text
                 # (or a fallback) so the turn always closes with a reply.

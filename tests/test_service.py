@@ -10,7 +10,10 @@ class FakeSession:
         self.calls = []
         self.store = store
 
-    async def ask(self, text, context="", on_update=None):
+    def has_session(self, conversation):
+        return False
+
+    async def ask(self, text, context="", on_update=None, channel=None, conversation=None, dispatch=False, broadcast=False):
         self.calls.append(text)
         return "done"
 
