@@ -20,7 +20,7 @@ clicking through scopes, events, Socket Mode, and the DM tab.
 
 ## What's preconfigured
 
-Bot scopes (`app_mentions:read`, `chat:write`, `*:history`, `im:*`, `reactions:write`),
+Bot scopes (`app_mentions:read`, `chat:write`, `files:read`, `files:write`, `*:history`, `im:*`, `reactions:write`),
 bot events (`app_mention`, `message.channels`, `message.groups`, `message.im`),
 **Socket Mode on** (no public URL), and the **Messages tab enabled** (so the persona
 is DM-able).
