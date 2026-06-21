@@ -32,7 +32,7 @@ broadcast:
 feedback:
   enabled: false
   persona: eva
-  channel: "#loquina-feedback"
+  channel: "C0BBZ58QKPW"   # #loquina-feedback — channel ID (robust for bot posting)
   poll_interval_seconds: 60
   source:
     type: sqlite          # sqlite | http
@@ -66,7 +66,7 @@ webhook:
   port: 8787
   secret_env: CREW_WEBHOOK_SECRET
   persona: eva
-  channel: "#loquina-feedback"
+  channel: "C0BBZ58QKPW"   # #loquina-feedback — channel ID (robust for bot posting)
 
 # Named MCP servers a persona can opt into via its `mcp: [...]` list. Portable:
 # add any stdio MCP server here. `browser` is headless Playwright (one-time:
