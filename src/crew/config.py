@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 import yaml
 
@@ -49,6 +50,8 @@ class PersonaConfig:
     dir: Path
     mcp_servers: dict = field(default_factory=dict)  # name -> Agent SDK MCP server config
     operator: str = "the operator"  # how personas refer to the human running the team
+    max_turns: Optional[int] = None  # hard cap on agentic loop turns per message (None = unlimited)
+    model_light: Optional[str] = None  # cheaper model for low-stakes turns (None = always use `model`)
 
 
 @dataclass
@@ -82,8 +85,11 @@ class BroadcastConfig:
     mention of EVERY persona in the channel, so the whole team responds (each for
     their own area). Literal text — no Slack user-group setup required."""
     enabled: bool = True
+    # Keep aliases unambiguous: common words like "here"/"channel"/"all" fire
+    # accidentally and fan a single message out to EVERY persona (one full agent
+    # turn each), so they're excluded from the default.
     aliases: list[str] = field(
-        default_factory=lambda: ["team", "all", "crew", "everyone", "channel", "here"]
+        default_factory=lambda: ["team", "everyone"]
     )
 
 
@@ -146,6 +152,8 @@ def load_config(path: str | Path) -> CrewConfig:
                 dir=root / "personas" / name,
                 mcp_servers=mcp_servers,
                 operator=operator,
+                max_turns=_merge(defaults, entry, "max_turns", None),
+                model_light=_merge(defaults, entry, "model_light", None),
             )
         )
 

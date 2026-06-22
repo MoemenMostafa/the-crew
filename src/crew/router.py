@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Awaitable, Callable, Optional
 
 log = logging.getLogger("crew.router")
@@ -45,6 +45,8 @@ class IncomingMessage:
     from_agent: bool = False  # sender is a teammate bot (for the loop-guard)
     dispatch: bool = False  # unaddressed channel question routed to the coordinator
     broadcast: bool = False  # addressed to the whole team (@team) — everyone replies
+    files: list = field(default_factory=list)  # raw Slack file objects on the message
+    file_paths: list = field(default_factory=list)  # local paths after download (set by the connector)
 
 
 class Router:
@@ -141,8 +143,17 @@ class Router:
                     await self.post(_name, _msg.channel, _msg.thread, text)
 
                 sender = self.names.get(msg.sender) or self.operator
+                # One resumable session per thread (or DM/channel). When the persona
+                # already has a session for this conversation, its own history carries
+                # the context — so only pull (and pay for) the full Slack transcript
+                # the first time we're brought into a thread.
+                conversation = msg.thread or msg.channel
                 context = f"[Slack {msg.channel} — message from {sender}]"
-                if msg.thread and self.fetch_thread is not None:
+                if (
+                    msg.thread
+                    and self.fetch_thread is not None
+                    and not session.has_session(conversation)
+                ):
                     try:
                         lines = await self.fetch_thread(name, msg.channel, msg.thread)
                         if lines:
@@ -155,6 +166,16 @@ class Router:
                     except Exception:
                         log.debug("thread fetch failed for %s — using minimal context", name)
 
+                if msg.file_paths:
+                    # The user attached file(s); they've been downloaded locally so
+                    # the agent can open them. Read renders images visually.
+                    listed = "\n".join(f"- {p}" for p in msg.file_paths)
+                    context += (
+                        "\n\n[The user attached the following file(s). They've been saved "
+                        "locally — use the Read tool to view them (images render visually, "
+                        f"PDFs/text are read as content):\n{listed}]"
+                    )
+
                 if msg.broadcast:
                     # Whole team was addressed (@team); every persona is replying in
                     # parallel. Keep each reply scoped so we don't get four near-identical
@@ -166,7 +187,15 @@ class Router:
                         "truly isn't your area, a one-liner deferring to the right person is fine.]"
                     )
 
-                reply = await session.ask(msg.text, context=context, on_update=on_update)
+                reply = await session.ask(
+                    msg.text,
+                    context=context,
+                    on_update=on_update,
+                    channel=msg.channel,
+                    conversation=conversation,
+                    dispatch=msg.dispatch,
+                    broadcast=msg.broadcast,
+                )
 
                 # If the agent produced nothing along the way, post the final text
                 # (or a fallback) so the turn always closes with a reply.

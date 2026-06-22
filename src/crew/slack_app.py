@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import os
 import re
+import tempfile
+from pathlib import Path
 from typing import Awaitable, Callable, Optional
 
 from .config import PersonaConfig
@@ -75,6 +77,22 @@ def extract_image_paths(text: str) -> tuple[str, list[str]]:
     return clean, paths
 
 
+def attachment_dir() -> Path:
+    """Directory inbound Slack attachments are downloaded to (created on demand)."""
+    d = Path(tempfile.gettempdir()) / "crew-attachments"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def attachment_path(base: Path, file_obj: dict) -> Path:
+    """Local destination for a downloaded Slack file. Namespaced by the file id so
+    distinct uploads never collide, and the basename is sanitized to stay inside
+    ``base`` (no path traversal from a hostile filename)."""
+    fid = str(file_obj.get("id") or "file")
+    name = os.path.basename(str(file_obj.get("name") or "")) or "attachment"
+    return base / f"{fid}_{name}"
+
+
 def sole_bot_in_thread(messages: list, my_bot_user_id: str) -> bool:
     """True if the ONLY bot that has posted in this thread is me.
 
@@ -95,30 +113,54 @@ def sole_bot_in_thread(messages: list, my_bot_user_id: str) -> bool:
     return bot_users == {my_bot_user_id}
 
 
+def _strip_inline_md(s: str) -> str:
+    """Flatten inline Markdown to plain text — used for table cells, which become
+    monospace (a code block renders ``*x*`` / ``<url|label>`` literally, so we want
+    the bare text instead)."""
+    s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)
+    s = re.sub(r"(?<!\w)__(.+?)__(?!\w)", r"\1", s)
+    s = re.sub(r"~~(.+?)~~", r"\1", s)
+    s = re.sub(r"`([^`]+)`", r"\1", s)
+    s = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r"\1 (\2)", s)
+    return s.strip()
+
+
 def _tables_to_code_blocks(text: str) -> str:
     """Slack has no Markdown tables — they render as raw `| a | b |` lines. Convert
-    each table to an aligned monospace code block (which Slack does render)."""
+    each table to an aligned monospace code block (which Slack does render). Handles
+    tables with or without leading/trailing pipes; cell contents are flattened to
+    plain text since a code block renders Markdown literally."""
     lines = text.split("\n")
 
-    def is_row(s: str) -> bool:
-        s = s.strip()
-        return s.startswith("|") and s.endswith("|") and len(s) > 1
-
     def is_sep(s: str) -> bool:
-        cells = [c.strip() for c in s.strip().strip("|").split("|")]
+        # A separator row: contains a pipe (distinguishes it from a `---` thematic
+        # break) and every cell is dashes with optional alignment colons.
+        s = s.strip()
+        if "|" not in s:
+            return False
+        cells = [c.strip() for c in s.strip("|").split("|")]
         return bool(cells) and all(re.fullmatch(r":?-{1,}:?", c) for c in cells)
 
+    def is_row(s: str) -> bool:
+        # Any line carrying a pipe is a candidate row (outer pipes optional).
+        return "|" in s.strip()
+
     def cells_of(s: str) -> list:
-        return [c.strip() for c in s.strip().strip("|").split("|")]
+        return [_strip_inline_md(c) for c in s.strip().strip("|").split("|")]
 
     out: list = []
     i = 0
     while i < len(lines):
         # A table = a header row immediately followed by a `---` separator row.
-        if i + 1 < len(lines) and is_row(lines[i]) and is_sep(lines[i + 1]):
+        if (
+            i + 1 < len(lines)
+            and is_row(lines[i])
+            and not is_sep(lines[i])
+            and is_sep(lines[i + 1])
+        ):
             rows = [cells_of(lines[i])]
             j = i + 2
-            while j < len(lines) and is_row(lines[j]):
+            while j < len(lines) and is_row(lines[j]) and not is_sep(lines[j]):
                 rows.append(cells_of(lines[j]))
                 j += 1
             ncol = max(len(r) for r in rows)
@@ -136,15 +178,8 @@ def _tables_to_code_blocks(text: str) -> str:
     return "\n".join(out)
 
 
-def to_slack_mrkdwn(text: str) -> str:
-    """Convert standard Markdown (what the model writes) to Slack mrkdwn.
-
-    Slack uses *bold* (not **bold**), _italic_, ~strike~ (not ~~), no #-headings,
-    <url|label> links, and has no tables. Without this, replies show literal
-    '**', '##', '| a | b |', etc.
-    """
-    # Tables first → monospace code block (Slack can't render Markdown tables).
-    text = _tables_to_code_blocks(text)
+def _inline_mrkdwn(text: str) -> str:
+    """Markdown → Slack mrkdwn for a span that is NOT inside a code fence."""
     # Links [label](url) -> <url|label>  (do first, before * handling)
     text = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r"<\2|\1>", text)
     # Headings: leading #..###### -> bold line
@@ -155,6 +190,30 @@ def to_slack_mrkdwn(text: str) -> str:
     # Strikethrough ~~x~~ -> ~x~
     text = re.sub(r"~~(.+?)~~", r"~\1~", text)
     return text
+
+
+def to_slack_mrkdwn(text: str) -> str:
+    """Convert standard Markdown (what the model writes) to Slack mrkdwn.
+
+    Slack uses *bold* (not **bold**), _italic_, ~strike~ (not ~~), no #-headings,
+    <url|label> links, and has no tables. Without this, replies show literal
+    '**', '##', '| a | b |', etc.
+    """
+    # Both passes operate only OUTSIDE fenced code blocks: splitting on ```
+    # yields alternating outside/inside segments (even indices are outside).
+    #
+    # Tables first — but skip fences, or a table shown *as an example* inside a
+    # code block would get a nested ``` injected and break the later split.
+    parts = text.split("```")
+    for k in range(0, len(parts), 2):
+        parts[k] = _tables_to_code_blocks(parts[k])
+    text = "```".join(parts)
+    # Then inline mrkdwn — again only outside fences, so model-authored code and the
+    # table blocks we just produced keep their literal contents.
+    parts = text.split("```")
+    for k in range(0, len(parts), 2):
+        parts[k] = _inline_mrkdwn(parts[k])
+    return "```".join(parts)
 
 
 def rewrite_mentions(text: str, name_to_id: dict) -> str:
@@ -215,7 +274,9 @@ def event_to_incoming(
 
     raw = event.get("text", "")
     text = _MENTION.sub("", raw).strip()
-    if not text:
+    # A bare attachment (image dropped in with no caption) is still a real message;
+    # only bail when there's neither text nor a file to act on.
+    if not text and not event.get("files"):
         return None
 
     channel = event.get("channel", "")
@@ -255,6 +316,7 @@ def event_to_incoming(
         from_agent=from_agent,
         dispatch=dispatch,
         broadcast=broadcast,
+        files=event.get("files") or [],
     )
 
 
@@ -297,6 +359,8 @@ class SlackConnector:
             if msg is None and not is_mention:
                 msg = await self._maybe_thread_followup(event)
             if msg is not None:
+                if msg.files:
+                    msg.file_paths = await self.download_files(msg.files)
                 await self.on_message(msg)
 
         @app.event("app_mention")
@@ -329,7 +393,8 @@ class SlackConnector:
         """Route an untagged human reply in a thread I solely own, so I answer
         without a tag. Returns an IncomingMessage or None. Skips DMs, top-level
         (non-thread) messages, bots, and threads where I'm not the only bot."""
-        if event.get("subtype") or event.get("bot_id"):
+        sub = event.get("subtype")
+        if (sub and sub != "file_share") or event.get("bot_id"):
             return None
         channel = event.get("channel", "")
         is_dm = event.get("channel_type") == "im" or channel.startswith("D")
@@ -337,7 +402,8 @@ class SlackConnector:
         if is_dm or not thread_ts or not self.bot_user_id:
             return None
         text = _MENTION.sub("", event.get("text", "")).strip()
-        if not text:
+        files = event.get("files") or []
+        if not text and not files:
             return None
         try:
             resp = await self._app.client.conversations_replies(
@@ -351,6 +417,7 @@ class SlackConnector:
         return IncomingMessage(
             persona=self.cfg.name, channel=channel, thread=thread_ts, text=text,
             sender=event.get("user", "unknown"), ts=event.get("ts"), from_agent=False,
+            files=files,
         )
 
     async def fetch_thread(self, channel: str, thread_ts: str, limit: int = 200) -> list:  # pragma: no cover
@@ -367,6 +434,39 @@ class SlackConnector:
             if txt:
                 lines.append(f"{who}: {txt}")
         return lines
+
+    async def download_files(self, files: list) -> list:  # pragma: no cover - needs live socket + files:read
+        """Download inbound Slack attachments to local files so the agent can open
+        them (Read renders images visually). `url_private` requires the bot token as
+        a Bearer header. Best-effort: a file that fails to download is skipped, never
+        breaking the turn. Requires the bot's `files:read` scope."""
+        import aiohttp
+
+        if not files:
+            return []
+        if self._app is None:
+            self._build()
+        token = self._app.client.token
+        base = attachment_dir()
+        paths: list = []
+        async with aiohttp.ClientSession() as session:
+            for f in files:
+                url = f.get("url_private_download") or f.get("url_private")
+                if not url:
+                    continue
+                dest = attachment_path(base, f)
+                try:
+                    async with session.get(
+                        url, headers={"Authorization": f"Bearer {token}"}
+                    ) as resp:
+                        if resp.status != 200:
+                            continue
+                        data = await resp.read()
+                    dest.write_bytes(data)
+                    paths.append(str(dest))
+                except Exception:
+                    continue
+        return paths
 
     async def stop(self) -> None:  # pragma: no cover - needs live socket
         if self._handler is not None:

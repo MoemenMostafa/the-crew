@@ -2,6 +2,7 @@ import pytest
 
 from crew.config import Guardrails, PersonaConfig
 from crew.slack_app import (
+    attachment_path,
     event_to_incoming,
     extract_image_paths,
     resolve_tokens,
@@ -257,6 +258,88 @@ def test_to_slack_mrkdwn_converts_table_to_code_block():
 
 def test_to_slack_mrkdwn_leaves_non_tables_alone():
     assert to_slack_mrkdwn("just a | pipe in text") == "just a | pipe in text"
+
+
+def test_table_without_outer_pipes_is_converted():
+    md = "Name | Role\n--- | ---\nAdam | Dev\nEva | Support"
+    out = to_slack_mrkdwn(md)
+    assert "```" in out
+    assert "---" not in out
+    assert "Name | Role" in out
+    assert "Eva  | Support" in out  # aligned to header width
+
+
+def test_table_cell_markdown_is_flattened_not_rewritten():
+    md = "| Item | Link |\n|---|---|\n| Note | **bold** |\n| Docs | [site](https://x.test) |"
+    out = to_slack_mrkdwn(md)
+    # Inside a code block these would render literally, so they're flattened to text.
+    assert "*bold*" not in out and "bold" in out
+    assert "<https://x.test|site>" not in out
+    assert "site (https://x.test)" in out
+
+
+def test_code_fence_contents_are_not_rewritten():
+    md = "Run this:\n```\nweight = a ** b   # see [ref](https://x.test)\n```\nok"
+    out = to_slack_mrkdwn(md)
+    # The ** and the link inside the fence must survive untouched.
+    assert "a ** b" in out
+    assert "[ref](https://x.test)" in out
+    # …but text outside the fence is still converted.
+    assert out.startswith("Run this:")
+
+
+def test_thematic_break_is_not_treated_as_a_table():
+    assert to_slack_mrkdwn("Intro\n\n---\n\nOutro") == "Intro\n\n---\n\nOutro"
+
+
+def test_markdown_table_shown_inside_a_code_fence_is_left_untouched():
+    fence = "```"
+    md = (
+        "Example:\n" + fence + "\n"
+        "| Name | Role |\n| --- | --- |\n| Adam | Dev |\n"
+        + fence + "\nDone."
+    )
+    out = to_slack_mrkdwn(md)
+    # The example table inside the fence must survive verbatim — not get a nested
+    # code block injected (which would also break the fence split).
+    assert "| Name | Role |" in out
+    assert out.count(fence) == 2
+
+
+def test_event_captures_attachments():
+    files = [{"id": "F1", "name": "shot.png", "mimetype": "image/png",
+              "url_private": "https://files.slack.test/F1"}]
+    ev = {"channel": "C1", "user": "U1", "ts": "1.0", "text": "<@B> what's this?",
+          "files": files}
+    msg = event_to_incoming(ev, "adam", is_mention=True)
+    assert msg is not None
+    assert msg.files == files
+
+
+def test_bare_attachment_with_no_caption_still_handled():
+    # An image dropped into a DM with no caption is a real message.
+    ev = {"channel": "D1", "channel_type": "im", "user": "U1", "ts": "1.0",
+          "text": "", "subtype": "file_share",
+          "files": [{"id": "F2", "name": "diagram.png", "url_private": "https://x/F2"}]}
+    msg = event_to_incoming(ev, "eva")
+    assert msg is not None
+    assert msg.files and msg.text == ""
+
+
+def test_empty_message_with_no_files_is_dropped():
+    ev = {"channel": "D1", "channel_type": "im", "user": "U1", "text": "   "}
+    assert event_to_incoming(ev, "eva") is None
+
+
+def test_attachment_path_is_namespaced_and_sanitized(tmp_path):
+    # Distinct ids never collide…
+    p1 = attachment_path(tmp_path, {"id": "F1", "name": "a.png"})
+    p2 = attachment_path(tmp_path, {"id": "F2", "name": "a.png"})
+    assert p1 != p2
+    # …and a hostile filename can't escape the base dir.
+    evil = attachment_path(tmp_path, {"id": "F3", "name": "../../etc/passwd"})
+    assert evil.parent == tmp_path
+    assert "/" not in evil.name.replace(f"F3_", "", 1)
 
 
 def test_extract_image_markdown_local_path():

@@ -24,6 +24,7 @@ from claude_agent_sdk import (
 from .audit import AuditLog
 from .guardrails import make_can_use_tool
 from .memory import Memory
+from .model_router import choose_model
 from .persona import Persona
 from .state import SessionStore
 
@@ -42,50 +43,91 @@ class AgentSession:
         self.memory = memory
         self._client_factory = client_factory
         self.store = store
-        # Resume the prior conversation across restarts when a store is present.
-        self.session_id: Optional[str] = store.get(persona.name) if store else None
+        # One SDK session id per conversation (Slack thread / DM). Cached in memory
+        # and persisted via the store so threads resume across restarts.
+        self._sessions: dict[str, str] = {}
         self._can_use_tool = make_can_use_tool(
             persona.name, persona.cfg.guardrails, audit
         )
 
-    def _options(self, system_prompt: str, resume: Optional[str]) -> ClaudeAgentOptions:
+    def _resume_id(self, conversation: str) -> Optional[str]:
+        if conversation in self._sessions:
+            return self._sessions[conversation]
+        if self.store is not None:
+            return self.store.get(self.persona.name, conversation)
+        return None
+
+    def has_session(self, conversation: str) -> bool:
+        """True if this persona already has a resumable session for the conversation
+        — i.e. its history is already loaded and the Slack transcript needn't be
+        re-sent."""
+        return self._resume_id(conversation) is not None
+
+    def _options(
+        self, system_prompt: str, resume: Optional[str], model: str
+    ) -> ClaudeAgentOptions:
         # Route ALL tool calls through the guardrail hook (no pre-allowlist) so
         # nothing dangerous slips past unaudited.
-        return ClaudeAgentOptions(
+        opts = dict(
             system_prompt=system_prompt,
             cwd=self.persona.workdir,
-            model=self.persona.cfg.model,
+            model=model,
             permission_mode="default",
             can_use_tool=self._can_use_tool,
             resume=resume,
             mcp_servers=self.persona.cfg.mcp_servers,
         )
+        # Only set max_turns when configured — leaving it unset means "no cap".
+        if self.persona.cfg.max_turns is not None:
+            opts["max_turns"] = self.persona.cfg.max_turns
+        return ClaudeAgentOptions(**opts)
 
-    def _remember_session(self, session_id: str) -> None:
-        self.session_id = session_id
+    def _remember_session(self, conversation: str, session_id: str) -> None:
+        self._sessions[conversation] = session_id
         if self.store is not None:
-            self.store.set(self.persona.name, session_id)
+            self.store.set(self.persona.name, conversation, session_id)
 
     async def ask(
         self,
         text: str,
         context: str = "",
         on_update: Optional[Callable[[str], Awaitable[None]]] = None,
+        channel: Optional[str] = None,
+        conversation: Optional[str] = None,
+        dispatch: bool = False,
+        broadcast: bool = False,
     ) -> str:
         """Run one turn. If ``on_update`` is given, each of the agent's intermediate
         messages is delivered as it streams in (live progress), and the full
-        transcript is returned for logging. Without it, the joined text is returned."""
+        transcript is returned for logging. Without it, the joined text is returned.
+
+        ``conversation`` scopes the resumable SDK session (one per Slack thread/DM);
+        it defaults to the channel, then a shared bucket. The model is chosen
+        per-turn: low-stakes turns (triage, broadcasts, quick questions) use the
+        persona's cheaper ``model_light`` when configured."""
+        conversation = conversation or channel or "default"
         system_prompt = self.persona.system_prompt(self.memory.read())
         prompt = f"{context}\n\n{text}".strip() if context else text
+        model = choose_model(
+            text,
+            self.persona.cfg.model,
+            self.persona.cfg.model_light,
+            dispatch=dispatch,
+            broadcast=broadcast,
+        )
 
+        resume = self._resume_id(conversation)
         try:
-            return await self._run(system_prompt, prompt, on_update, self.session_id)
+            return await self._run(system_prompt, prompt, on_update, resume, conversation, channel, model)
         except Exception:
             # A resumed session id may be stale/missing (e.g. CLI session pruned).
-            # Drop it and retry once from a fresh conversation rather than failing.
-            if self.session_id is not None:
-                self.session_id = None
-                return await self._run(system_prompt, prompt, on_update, None)
+            # Drop it — from memory AND the persisted store, so it isn't resurrected
+            # next turn or after a restart — and retry once from a fresh conversation.
+            if resume is not None:
+                self._sessions.pop(conversation, None)
+                if self.store is not None:
+                    self.store.delete(self.persona.name, conversation)
+                return await self._run(system_prompt, prompt, on_update, None, conversation, channel, model)
             raise
 
     async def _run(
@@ -94,8 +136,12 @@ class AgentSession:
         prompt: str,
         on_update,
         resume: Optional[str],
+        conversation: str,
+        channel: Optional[str] = None,
+        model: Optional[str] = None,
     ) -> str:
-        options = self._options(system_prompt, resume)
+        model = model or self.persona.cfg.model
+        options = self._options(system_prompt, resume, model)
         chunks: list[str] = []
         async with self._client_factory(options=options) as client:
             await client.query(prompt)
@@ -110,5 +156,21 @@ class AgentSession:
                             await on_update(joined)
                 elif isinstance(msg, ResultMessage):
                     if msg.session_id:
-                        self._remember_session(msg.session_id)
+                        self._remember_session(conversation, msg.session_id)
+                    self._record_usage(msg, channel, model)
         return "\n\n".join(chunks).strip()
+
+    def _record_usage(self, msg, channel: Optional[str], model: str) -> None:
+        """Best-effort: log this turn's token spend to the audit log. Never let a
+        usage-logging hiccup break the reply."""
+        try:
+            self.audit.record_usage(
+                persona=self.persona.name,
+                model=model,
+                usage=getattr(msg, "usage", None),
+                cost_usd=getattr(msg, "total_cost_usd", None),
+                num_turns=getattr(msg, "num_turns", None),
+                channel=channel,
+            )
+        except Exception:
+            pass

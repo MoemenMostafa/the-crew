@@ -4,11 +4,15 @@ from crew.router import IncomingMessage, Router
 
 
 class FakeSession:
-    def __init__(self, stream=None):
+    def __init__(self, stream=None, sessions=None):
         self.calls = []
         self.stream = stream  # optional list of interim updates to emit
+        self._sessions = set(sessions or ())  # conversations we already "know"
 
-    async def ask(self, text, context="", on_update=None):
+    def has_session(self, conversation):
+        return conversation in self._sessions
+
+    async def ask(self, text, context="", on_update=None, channel=None, conversation=None, dispatch=False, broadcast=False):
         self.calls.append(text)
         if self.stream and on_update is not None:
             for u in self.stream:
@@ -181,7 +185,10 @@ def test_thread_transcript_passed_as_context(tmp_path):
         def __init__(self):
             self.contexts = []
 
-        async def ask(self, text, context="", on_update=None):
+        def has_session(self, conversation):
+            return False  # brand-new thread → transcript should be injected
+
+        async def ask(self, text, context="", on_update=None, channel=None, conversation=None, dispatch=False, broadcast=False):
             self.contexts.append(context)
             return "ok"
 
@@ -203,6 +210,62 @@ def test_thread_transcript_passed_as_context(tmp_path):
     contexts = asyncio.run(run())
     assert "brought into a thread" in contexts[0]
     assert "improve the landing UX" in contexts[0]
+
+
+def test_transcript_not_refetched_once_session_exists(tmp_path):
+    # When the persona already has a session for the thread, the router must NOT
+    # re-fetch the Slack transcript — the resumed session carries the context.
+    async def run():
+        # Session already "knows" thread 9.9.
+        sess = FakeSession(sessions={"9.9"})
+        fetched = []
+
+        async def post(persona, channel, thread, text):
+            pass
+
+        async def fetch_thread(persona, channel, thread_ts):
+            fetched.append(thread_ts)
+            return ["user: earlier message"]
+
+        router = Router({"adam": sess}, post, fetch_thread=fetch_thread)
+        await router.handle(IncomingMessage("adam", "#crew-team", "9.9", "follow up", "u", ts="9.10"))
+        await router.join()
+        await router.stop()
+        return fetched
+
+    fetched = asyncio.run(run())
+    assert fetched == []  # transcript fetch skipped
+
+
+def test_attachment_paths_surfaced_in_context(tmp_path):
+    class CtxSession:
+        def __init__(self):
+            self.contexts = []
+
+        def has_session(self, conversation):
+            return True  # existing session → no transcript; still must surface files
+
+        async def ask(self, text, context="", on_update=None, channel=None, conversation=None, dispatch=False, broadcast=False):
+            self.contexts.append(context)
+            return "ok"
+
+    async def run():
+        sess = CtxSession()
+
+        async def post(persona, channel, thread, text):
+            pass
+
+        router = Router({"adam": sess}, post)
+        msg = IncomingMessage("adam", "#adam-dev", "9.9", "look at this", "u", ts="9.9")
+        msg.file_paths = ["/tmp/crew-attachments/F1_shot.png"]
+        await router.handle(msg)
+        await router.join()
+        await router.stop()
+        return sess.contexts
+
+    contexts = asyncio.run(run())
+    assert "/tmp/crew-attachments/F1_shot.png" in contexts[0]
+    assert "Read tool" in contexts[0]
 
 
 def test_humanize_ids_replaces_raw_mentions():
