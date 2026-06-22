@@ -199,12 +199,17 @@ def to_slack_mrkdwn(text: str) -> str:
     <url|label> links, and has no tables. Without this, replies show literal
     '**', '##', '| a | b |', etc.
     """
-    # Tables first → monospace code block (Slack can't render Markdown tables).
-    text = _tables_to_code_blocks(text)
-    # Apply inline conversions only OUTSIDE fenced code blocks: splitting on ```
-    # yields alternating outside/inside segments (even indices are outside). This
-    # protects both model-authored code and the table blocks we just produced from
-    # having their contents rewritten (which Slack would show literally).
+    # Both passes operate only OUTSIDE fenced code blocks: splitting on ```
+    # yields alternating outside/inside segments (even indices are outside).
+    #
+    # Tables first — but skip fences, or a table shown *as an example* inside a
+    # code block would get a nested ``` injected and break the later split.
+    parts = text.split("```")
+    for k in range(0, len(parts), 2):
+        parts[k] = _tables_to_code_blocks(parts[k])
+    text = "```".join(parts)
+    # Then inline mrkdwn — again only outside fences, so model-authored code and the
+    # table blocks we just produced keep their literal contents.
     parts = text.split("```")
     for k in range(0, len(parts), 2):
         parts[k] = _inline_mrkdwn(parts[k])

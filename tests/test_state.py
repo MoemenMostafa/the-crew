@@ -37,6 +37,20 @@ def test_corrupt_file_is_tolerated(tmp_path):
     assert store.get("adam", "#t1") == "a1"
 
 
+def test_delete_forgets_a_conversation(tmp_path):
+    path = tmp_path / "sessions.json"
+    s = SessionStore(path)
+    s.set("adam", "#t1", "sess-1")
+    s.set("adam", "#t2", "sess-2")
+    s.delete("adam", "#t1")
+    assert s.get("adam", "#t1") is None       # forgotten
+    assert s.get("adam", "#t2") == "sess-2"    # sibling untouched
+    assert SessionStore(path).get("adam", "#t1") is None  # persisted
+    # Deleting an unknown key is a no-op, not a crash.
+    s.delete("adam", "#nope")
+    s.delete("ghost", "#t1")
+
+
 def test_legacy_flat_format_is_ignored(tmp_path):
     # Pre-upgrade files stored a single id string per persona; those should be
     # treated as absent (conversation starts fresh once) rather than crashing.

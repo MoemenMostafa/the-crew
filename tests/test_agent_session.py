@@ -244,3 +244,41 @@ def test_stale_resume_falls_back_to_fresh_session(tmp_path):
     assert out == "fresh start"                 # recovered instead of erroring
     assert store.get("adam", "#t1") == "new-1"  # new id saved
     assert len(ResumeFailClient.instances) == 2  # one failed resume, one fresh
+
+
+class AlwaysFailClient:
+    """Fails on resume AND on a fresh run — exercises the stale-cleanup path."""
+
+    def __init__(self, options=None, transport=None):
+        self.options = options
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def query(self, prompt, session_id="default"):
+        pass
+
+    async def receive_response(self):
+        raise RuntimeError("session not found")
+        yield  # pragma: no cover - makes this an async generator
+
+
+def test_stale_id_is_purged_from_store_even_when_retry_fails(tmp_path):
+    import pytest
+
+    persona = make_persona(tmp_path)
+    audit = AuditLog(tmp_path / "a.jsonl", clock=lambda: 0.0)
+    memory = Memory(persona.cfg.dir / "memory")
+    store = SessionStore(tmp_path / "sessions.json")
+    store.set("adam", "#t1", "stale-id")
+
+    sess = AgentSession(persona, audit, memory, client_factory=AlwaysFailClient, store=store)
+    with pytest.raises(RuntimeError):
+        asyncio.run(sess.ask("hi", conversation="#t1"))
+
+    # The stale id is gone from the persisted store, so it won't double-trip every
+    # future turn (or resurrect after a restart).
+    assert store.get("adam", "#t1") is None

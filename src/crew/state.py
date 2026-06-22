@@ -45,3 +45,12 @@ class SessionStore:
             data[persona] = convs
         convs[conversation] = session_id
         self.path.write_text(json.dumps(data, indent=2))
+
+    def delete(self, persona: str, conversation: str) -> None:
+        """Forget a conversation's session id (e.g. after a stale resume) so it's
+        not resurrected on the next turn or after a restart."""
+        data = self._load()
+        convs = data.get(persona)
+        if isinstance(convs, dict) and conversation in convs:
+            del convs[conversation]
+            self.path.write_text(json.dumps(data, indent=2))

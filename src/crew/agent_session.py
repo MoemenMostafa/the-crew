@@ -121,9 +121,12 @@ class AgentSession:
             return await self._run(system_prompt, prompt, on_update, resume, conversation, channel, model)
         except Exception:
             # A resumed session id may be stale/missing (e.g. CLI session pruned).
-            # Drop it and retry once from a fresh conversation rather than failing.
+            # Drop it — from memory AND the persisted store, so it isn't resurrected
+            # next turn or after a restart — and retry once from a fresh conversation.
             if resume is not None:
                 self._sessions.pop(conversation, None)
+                if self.store is not None:
+                    self.store.delete(self.persona.name, conversation)
                 return await self._run(system_prompt, prompt, on_update, None, conversation, channel, model)
             raise
 

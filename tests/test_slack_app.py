@@ -292,6 +292,20 @@ def test_thematic_break_is_not_treated_as_a_table():
     assert to_slack_mrkdwn("Intro\n\n---\n\nOutro") == "Intro\n\n---\n\nOutro"
 
 
+def test_markdown_table_shown_inside_a_code_fence_is_left_untouched():
+    fence = "```"
+    md = (
+        "Example:\n" + fence + "\n"
+        "| Name | Role |\n| --- | --- |\n| Adam | Dev |\n"
+        + fence + "\nDone."
+    )
+    out = to_slack_mrkdwn(md)
+    # The example table inside the fence must survive verbatim — not get a nested
+    # code block injected (which would also break the fence split).
+    assert "| Name | Role |" in out
+    assert out.count(fence) == 2
+
+
 def test_event_captures_attachments():
     files = [{"id": "F1", "name": "shot.png", "mimetype": "image/png",
               "url_private": "https://files.slack.test/F1"}]
